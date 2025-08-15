@@ -1,2 +1,2 @@
 [alias]
-run-hello = "run -- tcpout:127.0.0.1:5760"
+run-local = "run -- tcpout:127.0.0.1:5760"
