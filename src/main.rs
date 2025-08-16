@@ -125,10 +125,9 @@ fn run(
                     match app_state.screen {
                         Screen::Main => {
                             terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
-                        } 
-                        // Screen::Mission => {
-                        //    terminal.draw(|frame| draw(&mut app_state, frame))?;
-                        // }
+                        } // Screen::Mission => {
+                          //    terminal.draw(|frame| draw(&mut app_state, frame))?;
+                          // }
                     }
                 }
             }
@@ -173,8 +172,11 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
 
     let list_events_widget = create_list_events_widget(&app_state.vehicle.messages).block(
         Block::bordered()
-            .padding(Padding::uniform(1))
-            .title(" Events ".bold()),
+            .padding(Padding::horizontal(1))
+            .title(" Events ".bold())
+            .title_bottom(
+                Line::from(format!("Total: {}", &app_state.vehicle.messages.len())).right_aligned(),
+            ),
     );
     frame.render_stateful_widget(
         list_events_widget,
