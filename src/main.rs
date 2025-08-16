@@ -1,5 +1,6 @@
 mod cli;
 mod mavlink_client;
+mod utils;
 use clap::Parser;
 use mavlink::{MavConnection, Message};
 use ratatui::DefaultTerminal;
@@ -96,6 +97,7 @@ fn run(
     terminal: &mut DefaultTerminal,
     rx: mpsc::Receiver<AppEvent>,
 ) -> Result<()> {
+    let mut fps_limiter = utils::FPSLimiter::default(50);
     while !app_state.is_exit {
         let app_event = rx.recv()?;
         match app_event {
@@ -104,10 +106,9 @@ fn run(
                     Screen::Main => {
                         handle_input_main_screen(&mut app_state, event);
                         terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
-                    }
-                    // Screen::Mission => {
-                    //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
-                    // }
+                    } // Screen::Mission => {
+                      //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
+                      // }
                 }
             }
             AppEvent::Mavlink(mav_message) => {
@@ -120,13 +121,15 @@ fn run(
                     app_state.vehicle.is_armed = is_armed;
                 }
 
-                match app_state.screen {
-                    Screen::Main => {
-                        // terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
+                if fps_limiter.check_allowed() {
+                    match app_state.screen {
+                        Screen::Main => {
+                            terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
+                        } 
+                        // Screen::Mission => {
+                        //    terminal.draw(|frame| draw(&mut app_state, frame))?;
+                        // }
                     }
-                    // Screen::Mission => {
-                    //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
-                    // }
                 }
             }
         }
