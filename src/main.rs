@@ -1,52 +1,65 @@
 mod cli;
 mod mavlink_client;
-use crate::mavlink_client::connect;
 use clap::Parser;
 use mavlink::{MavConnection, Message};
-use mavlink::{common::ATTITUDE_DATA, error::MessageReadError};
 use ratatui::DefaultTerminal;
-use ratatui::layout::Rect;
-use ratatui::symbols::{block, border, line};
-use ratatui::widgets::{List, ListItem, ListState, Widget};
-use std::sync::Mutex;
-use std::{env, sync::Arc, thread, time::Duration};
+use ratatui::widgets::{List, ListItem, ListState, Padding, Widget, Wrap};
+use std::sync::mpsc;
+use std::{sync::Arc, thread};
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, ModifierKeyCode};
-use ratatui::{Frame, text::Text};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::Frame;
 
 use crate::cli::Args;
 use color_eyre::Result;
 use mavlink::common::MavMessage;
+use mavlink::common::MavModeFlag;
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
-use std::io::{self, Error};
 
 struct Vehicle {
-    messages: Arc<Mutex<Vec<MavMessage>>>,
+    messages: Vec<MavMessage>,
     connection: Option<Arc<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
-    is_armed: Arc<Mutex<bool>>,
+    is_armed: bool,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
 
     color_eyre::install()?;
+    let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+    handle_input(event_tx.clone());
     let mut terminal = ratatui::init();
 
-    let vehicle = mavlink_client::connect(&args);
+    let vehicle = mavlink_client::connect(&args, event_tx.clone());
     let mut app_state = AppState::default(args, vehicle);
 
-    let app_result = run(&mut app_state, &mut terminal);
+    let app_result = run(&mut app_state, &mut terminal, event_rx);
     ratatui::restore();
     app_result
 }
 
+enum AppEvent {
+    Input(crossterm::event::Event),
+    Mavlink(MavMessage),
+}
+
+fn handle_input(tx: mpsc::Sender<AppEvent>) {
+    thread::spawn(move || {
+        loop {
+            if let Ok(key_event) = event::read() {
+                tx.send(AppEvent::Input(key_event)).unwrap();
+            }
+        }
+    });
+}
+
 enum Screen {
     Main,
-    AddNew,
+    // Mission,
 }
 pub struct AppState {
     pub args: crate::cli::Args,
@@ -68,24 +81,53 @@ impl AppState {
             screen: Screen::Main,
         }
     }
+    fn get_selected_message(&self) -> Option<MavMessage> {
+        let selected_message_num = self.list_state.selected();
+        if let Some(index) = selected_message_num {
+            return self.vehicle.messages.get(index).cloned();
+        } else {
+            return None;
+        }
+    }
 }
 
-fn run(mut app_state: &mut AppState, terminal: &mut DefaultTerminal) -> Result<()> {
-    loop {
-        if app_state.is_exit {
-            break;
-        }
-        match app_state.screen {
-            Screen::Main => {
-                terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
-                if let Ok(true) = event::poll(Duration::from_millis(10)) {
-                    if let Ok(key_event) = event::read() {
-                        handle_input_main_screen(&mut app_state, key_event);
+fn run(
+    mut app_state: &mut AppState,
+    terminal: &mut DefaultTerminal,
+    rx: mpsc::Receiver<AppEvent>,
+) -> Result<()> {
+    while !app_state.is_exit {
+        let app_event = rx.recv()?;
+        match app_event {
+            AppEvent::Input(event) => {
+                match app_state.screen {
+                    Screen::Main => {
+                        handle_input_main_screen(&mut app_state, event);
+                        terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
                     }
+                    // Screen::Mission => {
+                    //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
+                    // }
                 }
             }
-            Screen::AddNew => {
-                // terminal.draw(|frame| draw(&mut app_state, frame))?;
+            AppEvent::Mavlink(mav_message) => {
+                app_state.vehicle.messages.push(mav_message.clone());
+
+                if let mavlink::common::MavMessage::HEARTBEAT(data) = mav_message {
+                    let is_armed = data
+                        .base_mode
+                        .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED);
+                    app_state.vehicle.is_armed = is_armed;
+                }
+
+                match app_state.screen {
+                    Screen::Main => {
+                        // terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
+                    }
+                    // Screen::Mission => {
+                    //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
+                    // }
+                }
             }
         }
     }
@@ -99,6 +141,8 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
     let [connection_area, armed_area] =
         Layout::horizontal([Constraint::Length(50), Constraint::Max(14)]).areas(headear_area);
 
+    let [list_events_area, details_events_area] =
+        Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)]).areas(events_area);
     Paragraph::new(Line::from(vec![
         Span::from(" Address: "),
         Span::from(app_state.args.address.to_string()),
@@ -114,8 +158,7 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
     Paragraph::new(if app_state.vehicle.connection.is_none() {
         Span::from("Unknown").gray()
     } else {
-        let is_armed: bool = *(app_state.vehicle.is_armed.lock().unwrap());
-        if is_armed {
+        if app_state.vehicle.is_armed {
             Span::from(" Armed ").green()
         } else {
             Span::from(" Disarmed ").red()
@@ -125,35 +168,122 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
     .centered()
     .render(armed_area, frame.buffer_mut());
 
-    let events_block = Block::bordered()
-        .title(" Events ".bold())
-        .border_set(border::THICK);
-    draw_event(app_state, frame, events_area, events_block);
+    let list_events_widget = create_list_events_widget(&app_state.vehicle.messages).block(
+        Block::bordered()
+            .padding(Padding::uniform(1))
+            .title(" Events ".bold()),
+    );
+    frame.render_stateful_widget(
+        list_events_widget,
+        list_events_area,
+        &mut app_state.list_state,
+    );
+
+    create_event_details_paragraph(app_state.get_selected_message())
+        .block(
+            Block::bordered()
+                .padding(Padding::uniform(1))
+                .title(" Event details ".bold()),
+        )
+        .render(details_events_area, frame.buffer_mut());
 }
 
-fn draw_event(app_state: &mut AppState, frame: &mut Frame, chunk: Rect, block: Block) {
-    let info_style = Style::default().fg(Color::Blue);
-    let warning_style = Style::default().fg(Color::Yellow);
-    let error_style = Style::default().fg(Color::Magenta);
-    let critical_style = Style::default().fg(Color::Red);
-    let logs: Vec<ListItem> = app_state
-        .vehicle
-        .messages
-        .lock()
-        .unwrap()
+fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'static> {
+    if let Some(m) = message {
+        let mut lines = vec![
+            Line::from(format!("Name: {} ", m.message_name())),
+            Line::from(format!("Id:   {} ", m.message_id())),
+            Line::from(format!("")),
+        ];
+        match &m {
+            MavMessage::HEARTBEAT(data) => {
+                lines.push(Line::from(format!(
+                    "custom_mode:     {:?} ",
+                    data.custom_mode
+                )));
+                lines.push(Line::from(format!("mavtype:         {:?}", data.mavtype)));
+                lines.push(Line::from(format!(
+                    "autopilot:       {:?} ",
+                    data.autopilot
+                )));
+                let a = data
+                    .base_mode
+                    .iter()
+                    .map(|x| format!("{:?}", x))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(Line::from(format!("base_mode:       {}", a)));
+                lines.push(Line::from(format!(
+                    "system_status:   {:?} ",
+                    data.system_status
+                )));
+                lines.push(Line::from(format!(
+                    "mavlink_version: {:?} ",
+                    data.mavlink_version
+                )));
+            }
+            _ => {
+                let l = try_parse_message(&m)
+                    .iter()
+                    .map(|(k, v)| Line::from(format!("{}: {}", k, v)))
+                    .collect::<Vec<_>>();
+                lines.extend(l);
+            }
+        };
+        lines.push(Line::from(format!("")));
+        lines.push(Line::from(format!("---------------------------------")));
+        lines.push(Line::from(format!("Raw Message:")));
+        lines.push(Line::from(format!("{:?} ", m)));
+        Paragraph::new(lines).wrap(Wrap { trim: false })
+    } else {
+        Paragraph::new(Line::from(" Please select event "))
+    }
+}
+
+fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
+    let original = format!("{:?}", message);
+    if let Some(brackets_start) = original.find("{") {
+        if let Some(brackets_end) = original.find("}") {
+            let details = original[brackets_start + 1..brackets_end]
+                .trim()
+                .to_string()
+                .split(",")
+                .filter(|val| val.contains(":"))
+                .map(|val| val.split(":").map(|el| el.trim()).collect::<Vec<_>>())
+                .map(|val| {
+                    (
+                        val.get(0).unwrap().to_string(),
+                        val.get(1).unwrap().to_string(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let padded = details
+                .iter()
+                .map(|val| (format!("{:<20}", &val.0).to_string(), val.1.clone()))
+                .collect::<Vec<_>>();
+            return padded;
+        }
+    } else {
+        return vec![];
+    }
+    // original.split("{")
+    // let m = format!("{:?}", message).;
+    vec![("Hello".to_string(), original)]
+}
+
+fn create_list_events_widget(messages: &Vec<MavMessage>) -> List<'static> {
+    let logs: Vec<ListItem> = messages
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let s = error_style;
-            let content = vec![Line::from(vec![
-                Span::styled(format!("{:>4} ", i), s),
-                Span::raw(format!("{:?}", m)),
-            ])];
+            let content = Line::from(vec![
+                Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
+                Span::raw(format!("{}", m.message_name())),
+            ]);
             ListItem::new(content)
         })
         .collect();
-    let logs = List::new(logs).highlight_style(warning_style).block(block);
-    frame.render_stateful_widget(logs, chunk, &mut app_state.list_state);
+    return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
 }
 
 fn handle_input_main_screen(app_state: &mut AppState, event: Event) {

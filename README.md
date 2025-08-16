@@ -15,3 +15,5 @@ cargo build
 [TODO] pretty print / make CLI
 [TODO] save settings/plan to local file, load from file 
 [TODO] bottom help
+[TODO] bottom total messages
+[TODO] redraw on mavlink event

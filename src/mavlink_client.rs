@@ -1,57 +1,35 @@
-use mavlink::MavConnection;
-use mavlink::common::{MavMessage, MavModeFlag};
-use mavlink::{common::ATTITUDE_DATA, error::MessageReadError};
-use std::sync::Mutex;
-use std::{env, sync::Arc, thread, time::Duration};
+use std::sync::mpsc;
+use std::{sync::Arc, thread, time::Duration};
 
-use crossterm::event::{self, Event};
-use ratatui::{Frame, text::Text};
+use mavlink::error::MessageReadError;
 
-use ratatui::{
-    layout::{Constraint, Layout},
-    style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span},
-    widgets::{Block, Paragraph},
-};
-
-use crate::Vehicle;
 use crate::cli::Args;
+use crate::{AppEvent, Vehicle};
 
-pub fn connect(args: &Args) -> Vehicle {
+pub fn connect(args: &Args, tx: mpsc::Sender<AppEvent>) -> Vehicle {
     let url = &args.address;
 
     // It's possible to change the mavlink dialect to be used in the connect call
     let mut vehicle = Vehicle {
         connection: None,
-        is_armed: Arc::new(Mutex::new(false)),
-        messages: Arc::new(Mutex::new(Vec::new())),
+        is_armed: false,
+        messages: Vec::new(),
     };
     let connection = mavlink::connect::<mavlink::common::MavMessage>(&url.to_string()).ok();
     if connection.is_none() {
         return vehicle;
     }
     vehicle.connection = Some(Arc::new(connection.unwrap()));
-    subscribe(&mut vehicle);
+    subscribe(&mut vehicle, tx);
 
     vehicle
 }
-fn subscribe(vehicle: &mut Vehicle) {
+fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
     let connection = vehicle.connection.as_mut().unwrap().clone();
-    let messages = vehicle.messages.clone();
-    let vehicle_is_armed = vehicle.is_armed.clone();
     thread::spawn({
         move || loop {
             match connection.recv() {
-                Ok((header, msg)) => {
-                    messages.lock().unwrap().push(msg.clone());
-                    if let mavlink::common::MavMessage::HEARTBEAT(data) = msg {
-                        let is_armed = data
-                            .base_mode
-                            .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED);
-                        let mut vehicle_is_armed = vehicle_is_armed.lock().unwrap();
-                        *vehicle_is_armed = is_armed;
-                    }
-                }
+                Ok((_, msg)) => tx.send(AppEvent::Mavlink(msg)).unwrap(),
                 Err(MessageReadError::Io(e)) => {
                     if e.kind() == std::io::ErrorKind::WouldBlock {
                         // println!("No messages");
