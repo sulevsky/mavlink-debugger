@@ -138,8 +138,12 @@ fn run(
 
 fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
     let area = frame.area();
-    let [headear_area, events_area] =
-        Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+    let [headear_area, events_area, help_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Fill(1),
+        Constraint::Length(3),
+    ])
+    .areas(area);
     let [connection_area, armed_area] =
         Layout::horizontal([Constraint::Length(50), Constraint::Max(14)]).areas(headear_area);
 
@@ -191,6 +195,11 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
                 .title(" Event details ".bold()),
         )
         .render(details_events_area, frame.buffer_mut());
+
+    Paragraph::new(Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab").gray())
+        .block(Block::bordered())
+        .centered()
+        .render(help_area, frame.buffer_mut());
 }
 
 fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'static> {
@@ -268,12 +277,8 @@ fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
                 .collect::<Vec<_>>();
             return padded;
         }
-    } else {
-        return vec![];
     }
-    // original.split("{")
-    // let m = format!("{:?}", message).;
-    vec![("Hello".to_string(), original)]
+    return vec![];
 }
 
 fn create_list_events_widget(messages: &Vec<MavMessage>) -> List<'static> {
@@ -309,14 +314,6 @@ fn handle_input_main_screen(app_state: &mut AppState, event: Event) {
                 'k' => {
                     app_state.list_state.select_previous();
                 }
-                // 'D' => {
-                //     if let Some(index) = app_state.list_state.selected() {
-                //         app_state.items.remove(index);
-                //     }
-                // }
-                // 'A' => {
-                //     app_state.is_add_new = true;
-                // }
                 _ => {}
             },
 
@@ -334,6 +331,28 @@ fn handle_input_main_screen(app_state: &mut AppState, event: Event) {
             }
             KeyCode::End => {
                 app_state.list_state.select_last();
+            }
+            KeyCode::PageUp => {
+                app_state
+                    .list_state
+                    .select(app_state.list_state.selected().map(|x| (x - 20).max(0)));
+            }
+            KeyCode::PageDown => {
+                app_state.list_state.select(
+                    app_state
+                        .list_state
+                        .selected()
+                        .map(|x| (x + 20).min(app_state.vehicle.messages.len())),
+                );
+            }
+            KeyCode::Tab => {
+                // TODO
+                app_state.list_state.select(
+                    app_state
+                        .list_state
+                        .selected()
+                        .map(|x| (x + 20).min(app_state.vehicle.messages.len())),
+                );
             }
 
             KeyCode::Enter => {
