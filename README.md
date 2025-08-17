@@ -11,9 +11,6 @@ cargo build
 ```
 
 ## Plan
-
-[TODO] pretty print / make CLI
 [TODO] save settings/plan to local file, load from file 
-[TODO] bottom help
-[TODO] parameters screen
-[TODO] mission screen
+[TODO] parameters screen, last load, refresh
+[TODO] mission screen, last load, refresh

@@ -4,9 +4,10 @@ mod utils;
 use clap::Parser;
 use mavlink::{MavConnection, Message};
 use ratatui::DefaultTerminal;
-use ratatui::widgets::{List, ListItem, ListState, Padding, Widget, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Padding, Tabs, Widget, Wrap};
 use std::sync::mpsc;
 use std::{sync::Arc, thread};
+use strum::{Display, EnumIter, IntoEnumIterator};
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::Frame;
@@ -58,9 +59,12 @@ fn handle_input(tx: mpsc::Sender<AppEvent>) {
     });
 }
 
+#[derive(Default, Display, EnumIter, PartialEq)]
 enum Screen {
-    Main,
-    // Mission,
+    #[default]
+    Messages,
+    Parameters,
+    Mission,
 }
 pub struct AppState {
     pub args: crate::cli::Args,
@@ -79,7 +83,7 @@ impl AppState {
             vehicle,
             is_exit: false,
             list_state: ListState::default().with_selected(Some(0)),
-            screen: Screen::Main,
+            screen: Screen::Messages,
         }
     }
     fn get_selected_message(&self) -> Option<MavMessage> {
@@ -101,16 +105,20 @@ fn run(
     while !app_state.is_exit {
         let app_event = rx.recv()?;
         match app_event {
-            AppEvent::Input(event) => {
-                match app_state.screen {
-                    Screen::Main => {
-                        handle_input_main_screen(&mut app_state, event);
-                        terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
-                    } // Screen::Mission => {
-                      //     // terminal.draw(|frame| draw(&mut app_state, frame))?;
-                      // }
+            AppEvent::Input(event) => match app_state.screen {
+                Screen::Messages => {
+                    handle_input_messages_screen(&mut app_state, event);
+                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
                 }
-            }
+                Screen::Parameters => {
+                    handle_input_messages_screen(&mut app_state, event);
+                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                }
+                Screen::Mission => {
+                    handle_input_messages_screen(&mut app_state, event);
+                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                }
+            },
             AppEvent::Mavlink(mav_message) => {
                 app_state.vehicle.messages.push(mav_message.clone());
 
@@ -123,11 +131,15 @@ fn run(
 
                 if fps_limiter.check_allowed() {
                     match app_state.screen {
-                        Screen::Main => {
-                            terminal.draw(|frame| draw_main_screen(&mut app_state, frame))?;
-                        } // Screen::Mission => {
-                          //    terminal.draw(|frame| draw(&mut app_state, frame))?;
-                          // }
+                        Screen::Messages => {
+                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                        }
+                        Screen::Parameters => {
+                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                        }
+                        Screen::Mission => {
+                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                        }
                     }
                 }
             }
@@ -136,14 +148,36 @@ fn run(
     Ok(())
 }
 
-fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
+fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     let area = frame.area();
+    let [tab_header, tab_content] =
+        Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+
+    let tab_index = Screen::iter()
+        .position(|x| x == app_state.screen)
+        .unwrap_or(0);
+
+    let tab_names = Screen::iter()
+        .map(|x| format!(" {} ", x))
+        .collect::<Vec<String>>();
+
+    Tabs::new(tab_names)
+        .highlight_style(Style::default().bg(Color::Yellow))
+        .select(tab_index)
+        .block(Block::bordered().border_type(ratatui::widgets::BorderType::Thick))
+        .render(tab_header, frame.buffer_mut());
+
+    Block::bordered()
+        .border_type(ratatui::widgets::BorderType::Thick)
+        .render(tab_content, frame.buffer_mut());
+
     let [headear_area, events_area, help_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Fill(1),
         Constraint::Length(3),
     ])
-    .areas(area);
+    .margin(1)
+    .areas(tab_content);
     let [connection_area, armed_area] =
         Layout::horizontal([Constraint::Length(50), Constraint::Max(14)]).areas(headear_area);
 
@@ -196,10 +230,13 @@ fn draw_main_screen(app_state: &mut AppState, frame: &mut Frame) {
         )
         .render(details_events_area, frame.buffer_mut());
 
-    Paragraph::new(Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab").gray())
-        .block(Block::bordered())
-        .centered()
-        .render(help_area, frame.buffer_mut());
+    Paragraph::new(
+        Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab")
+            .gray(),
+    )
+    .block(Block::bordered())
+    .centered()
+    .render(help_area, frame.buffer_mut());
 }
 
 fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'static> {
@@ -296,7 +333,7 @@ fn create_list_events_widget(messages: &Vec<MavMessage>) -> List<'static> {
     return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
 }
 
-fn handle_input_main_screen(app_state: &mut AppState, event: Event) {
+fn handle_input_messages_screen(app_state: &mut AppState, event: Event) {
     if let Event::Key(key) = event {
         match key.code {
             KeyCode::Char(char) => match char {
@@ -346,13 +383,16 @@ fn handle_input_main_screen(app_state: &mut AppState, event: Event) {
                 );
             }
             KeyCode::Tab => {
-                // TODO
-                app_state.list_state.select(
-                    app_state
-                        .list_state
-                        .selected()
-                        .map(|x| (x + 20).min(app_state.vehicle.messages.len())),
-                );
+                let mut flag = false;
+                for item in Screen::iter().cycle() {
+                    if flag {
+                        app_state.screen = item;
+                        break;
+                    }
+                    if item == app_state.screen {
+                        flag = true;
+                    }
+                }
             }
 
             KeyCode::Enter => {
