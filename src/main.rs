@@ -4,8 +4,10 @@ mod utils;
 use clap::Parser;
 use mavlink::{MavConnection, Message};
 use ratatui::DefaultTerminal;
+use ratatui::layout::Rect;
 use ratatui::widgets::{List, ListItem, ListState, Padding, Tabs, Widget, Wrap};
 use std::sync::mpsc;
+use std::time::Instant;
 use std::{sync::Arc, thread};
 use strum::{Display, EnumIter, IntoEnumIterator};
 
@@ -13,9 +15,10 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::Frame;
 
 use crate::cli::Args;
+use crate::mavlink_client::request_parameters;
 use color_eyre::Result;
-use mavlink::common::MavMessage;
 use mavlink::common::MavModeFlag;
+use mavlink::common::{MavMessage, PARAM_VALUE_DATA};
 use ratatui::{
     layout::{Constraint, Layout},
     style::{Color, Style, Stylize},
@@ -25,6 +28,8 @@ use ratatui::{
 
 struct Vehicle {
     messages: Vec<MavMessage>,
+    parameter_messages: Vec<PARAM_VALUE_DATA>,
+    last_parameters_request: Option<Instant>,
     connection: Option<Arc<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
     is_armed: bool,
 }
@@ -67,11 +72,12 @@ enum Screen {
     Mission,
 }
 pub struct AppState {
-    pub args: crate::cli::Args,
+    args: crate::cli::Args,
 
     vehicle: Vehicle,
 
-    pub list_state: ListState,
+    messages_list_state: ListState,
+    parameters_list_state: ListState,
 
     is_exit: bool,
     screen: Screen,
@@ -82,14 +88,23 @@ impl AppState {
             args,
             vehicle,
             is_exit: false,
-            list_state: ListState::default().with_selected(Some(0)),
+            messages_list_state: ListState::default().with_selected(Some(0)),
+            parameters_list_state: ListState::default().with_selected(Some(0)),
             screen: Screen::Messages,
         }
     }
     fn get_selected_message(&self) -> Option<MavMessage> {
-        let selected_message_num = self.list_state.selected();
+        let selected_message_num = self.messages_list_state.selected();
         if let Some(index) = selected_message_num {
             return self.vehicle.messages.get(index).cloned();
+        } else {
+            return None;
+        }
+    }
+    fn get_selected_parameter(&self) -> Option<PARAM_VALUE_DATA> {
+        let selected_parameter_num = self.parameters_list_state.selected();
+        if let Some(index) = selected_parameter_num {
+            return self.vehicle.parameter_messages.get(index).cloned();
         } else {
             return None;
         }
@@ -105,28 +120,37 @@ fn run(
     while !app_state.is_exit {
         let app_event = rx.recv()?;
         match app_event {
-            AppEvent::Input(event) => match app_state.screen {
-                Screen::Messages => {
-                    handle_input_messages_screen(&mut app_state, event);
-                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+            AppEvent::Input(event) => {
+                handle_input_event(&mut app_state, event);
+                match app_state.screen {
+                    Screen::Messages => {
+                        terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                    }
+                    Screen::Parameters => {
+                        if app_state.vehicle.last_parameters_request.is_none() {
+                            request_parameters(&mut app_state.vehicle);
+                            app_state.vehicle.last_parameters_request = Some(Instant::now());
+                        }
+                        terminal.draw(|frame| draw_parameters_screen(&mut app_state, frame))?;
+                    }
+                    Screen::Mission => {
+                        terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                    }
                 }
-                Screen::Parameters => {
-                    handle_input_messages_screen(&mut app_state, event);
-                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
-                }
-                Screen::Mission => {
-                    handle_input_messages_screen(&mut app_state, event);
-                    terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
-                }
-            },
+            }
             AppEvent::Mavlink(mav_message) => {
                 app_state.vehicle.messages.push(mav_message.clone());
-
-                if let mavlink::common::MavMessage::HEARTBEAT(data) = mav_message {
-                    let is_armed = data
-                        .base_mode
-                        .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED);
-                    app_state.vehicle.is_armed = is_armed;
+                match mav_message {
+                    mavlink::common::MavMessage::HEARTBEAT(data) => {
+                        let is_armed = data
+                            .base_mode
+                            .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED);
+                        app_state.vehicle.is_armed = is_armed;
+                    }
+                    mavlink::common::MavMessage::PARAM_VALUE(data) => {
+                        app_state.vehicle.parameter_messages.push(data);
+                    }
+                    _ => {}
                 }
 
                 if fps_limiter.check_allowed() {
@@ -135,7 +159,7 @@ fn run(
                             terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
                         }
                         Screen::Parameters => {
-                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                            terminal.draw(|frame| draw_parameters_screen(&mut app_state, frame))?;
                         }
                         Screen::Mission => {
                             terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
@@ -153,19 +177,7 @@ fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     let [tab_header, tab_content] =
         Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
 
-    let tab_index = Screen::iter()
-        .position(|x| x == app_state.screen)
-        .unwrap_or(0);
-
-    let tab_names = Screen::iter()
-        .map(|x| format!(" {} ", x))
-        .collect::<Vec<String>>();
-
-    Tabs::new(tab_names)
-        .highlight_style(Style::default().bg(Color::Yellow))
-        .select(tab_index)
-        .block(Block::bordered().border_type(ratatui::widgets::BorderType::Thick))
-        .render(tab_header, frame.buffer_mut());
+    draw_tabs(tab_header, app_state, frame);
 
     Block::bordered()
         .border_type(ratatui::widgets::BorderType::Thick)
@@ -219,7 +231,7 @@ fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     frame.render_stateful_widget(
         list_events_widget,
         list_events_area,
-        &mut app_state.list_state,
+        &mut app_state.messages_list_state,
     );
 
     create_event_details_paragraph(app_state.get_selected_message())
@@ -229,6 +241,78 @@ fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
                 .title(" Event details ".bold()),
         )
         .render(details_events_area, frame.buffer_mut());
+
+    Paragraph::new(
+        Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab")
+            .gray(),
+    )
+    .block(Block::bordered())
+    .centered()
+    .render(help_area, frame.buffer_mut());
+}
+
+fn draw_tabs(tab_header: Rect, app_state: &mut AppState, frame: &mut Frame) {
+    let tab_index = Screen::iter()
+        .position(|x| x == app_state.screen)
+        .unwrap_or(0);
+
+    let tab_names = Screen::iter()
+        .map(|x| format!(" {} ", x))
+        .collect::<Vec<String>>();
+
+    Tabs::new(tab_names)
+        .highlight_style(Style::default().bg(Color::Yellow))
+        .select(tab_index)
+        .block(Block::bordered().border_type(ratatui::widgets::BorderType::Thick))
+        .render(tab_header, frame.buffer_mut());
+}
+
+fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
+    let area = frame.area();
+    let [tab_header, tab_content] =
+        Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+
+    draw_tabs(tab_header, app_state, frame);
+
+    Block::bordered()
+        .border_type(ratatui::widgets::BorderType::Thick)
+        .render(tab_content, frame.buffer_mut());
+
+    let [parameters_area, help_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(3)])
+            .margin(1)
+            .areas(tab_content);
+
+    let [list_parameters_area, details_parameters_area] =
+        Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)])
+            .areas(parameters_area);
+
+    let list_parameters_widget =
+        create_list_parameters_widget(&app_state.vehicle.parameter_messages).block(
+            Block::bordered()
+                .padding(Padding::horizontal(1))
+                .title(" Parameters ".bold())
+                .title_bottom(
+                    Line::from(format!(
+                        "Total: {}",
+                        &app_state.vehicle.parameter_messages.len()
+                    ))
+                    .right_aligned(),
+                ),
+        );
+    frame.render_stateful_widget(
+        list_parameters_widget,
+        list_parameters_area,
+        &mut app_state.parameters_list_state,
+    );
+
+    create_parameter_details_paragraph(app_state.get_selected_parameter())
+        .block(
+            Block::bordered()
+                .padding(Padding::uniform(1))
+                .title(" Parameter details ".bold()),
+        )
+        .render(details_parameters_area, frame.buffer_mut());
 
     Paragraph::new(
         Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab")
@@ -291,6 +375,22 @@ fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'sta
     }
 }
 
+fn create_parameter_details_paragraph(parameter: Option<PARAM_VALUE_DATA>) -> Paragraph<'static> {
+    if let Some(param) = parameter {
+        let lines = vec![
+            Line::from(format!("Id:       {} ", decode_param_id(&param.param_id))),
+            Line::from(format!("Value:    {} ", param.param_value)),
+            Line::from(format!("")),
+            Line::from(format!("---------------------------------")),
+            Line::from(format!("Raw parameter:")),
+            Line::from(format!("{:?} ", param)),
+        ];
+        Paragraph::new(lines).wrap(Wrap { trim: false })
+    } else {
+        Paragraph::new(Line::from(" Please select parameter "))
+    }
+}
+
 fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
     let original = format!("{:?}", message);
     if let Some(brackets_start) = original.find("{") {
@@ -332,8 +432,30 @@ fn create_list_events_widget(messages: &Vec<MavMessage>) -> List<'static> {
         .collect();
     return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
 }
+fn create_list_parameters_widget(parameter_messages: &Vec<PARAM_VALUE_DATA>) -> List<'static> {
+    let logs: Vec<ListItem> = parameter_messages
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let content = Line::from(vec![
+                Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
+                Span::raw(format!("{}", decode_param_id(&m.param_id))),
+            ]);
+            ListItem::new(content)
+        })
+        .collect();
+    return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
+}
 
-fn handle_input_messages_screen(app_state: &mut AppState, event: Event) {
+fn decode_param_id(param_id: &[u8; 16]) -> String {
+    param_id
+        .iter()
+        .filter(|&b| *b != 0)
+        .map(|&b| char::from(b))
+        .collect()
+}
+
+fn handle_input_event(app_state: &mut AppState, event: Event) {
     if let Event::Key(key) = event {
         match key.code {
             KeyCode::Char(char) => match char {
@@ -345,43 +467,98 @@ fn handle_input_messages_screen(app_state: &mut AppState, event: Event) {
                         app_state.is_exit = true;
                     }
                 }
-                'j' => {
-                    app_state.list_state.select_next();
-                }
-                'k' => {
-                    app_state.list_state.select_previous();
-                }
+                'j' => match app_state.screen {
+                    Screen::Messages => {
+                        app_state.messages_list_state.select_next();
+                    }
+                    Screen::Parameters => {
+                        app_state.parameters_list_state.select_next();
+                    }
+                    Screen::Mission => {}
+                },
+                'k' => match app_state.screen {
+                    Screen::Messages => {
+                        app_state.messages_list_state.select_previous();
+                    }
+                    Screen::Parameters => {
+                        app_state.parameters_list_state.select_previous();
+                    }
+                    Screen::Mission => {}
+                },
                 _ => {}
             },
 
             KeyCode::Esc => {
                 app_state.is_exit = true;
             }
-            KeyCode::Up => {
-                app_state.list_state.select_previous();
-            }
-            KeyCode::Down => {
-                app_state.list_state.select_next();
-            }
-            KeyCode::Home => {
-                app_state.list_state.select_first();
-            }
-            KeyCode::End => {
-                app_state.list_state.select_last();
-            }
-            KeyCode::PageUp => {
-                app_state
-                    .list_state
-                    .select(app_state.list_state.selected().map(|x| (x - 20).max(0)));
-            }
-            KeyCode::PageDown => {
-                app_state.list_state.select(
+            KeyCode::Up => match app_state.screen {
+                Screen::Messages => {
+                    app_state.messages_list_state.select_previous();
+                }
+                Screen::Parameters => {
+                    app_state.parameters_list_state.select_previous();
+                }
+                Screen::Mission => {}
+            },
+            KeyCode::Down => match app_state.screen {
+                Screen::Messages => {
+                    app_state.messages_list_state.select_next();
+                }
+                Screen::Parameters => {
+                    app_state.parameters_list_state.select_next();
+                }
+                Screen::Mission => {}
+            },
+            KeyCode::Home => match app_state.screen {
+                Screen::Messages => {
+                    app_state.messages_list_state.select_first();
+                }
+                Screen::Parameters => {
+                    app_state.parameters_list_state.select_first();
+                }
+                Screen::Mission => {}
+            },
+            KeyCode::End => match app_state.screen {
+                Screen::Messages => {
+                    app_state.messages_list_state.select_last();
+                }
+                Screen::Parameters => {
+                    app_state.parameters_list_state.select_last();
+                }
+                Screen::Mission => {}
+            },
+            KeyCode::PageUp => match app_state.screen {
+                Screen::Messages => app_state.messages_list_state.select(
                     app_state
-                        .list_state
+                        .messages_list_state
+                        .selected()
+                        .map(|x| (x - 20).max(0)),
+                ),
+                Screen::Parameters => app_state.parameters_list_state.select(
+                    app_state
+                        .parameters_list_state
+                        .selected()
+                        .map(|x| (x - 20).max(0)),
+                ),
+                Screen::Mission => {}
+            },
+
+            KeyCode::PageDown => match app_state.screen {
+                Screen::Messages => app_state.messages_list_state.select(
+                    app_state
+                        .messages_list_state
                         .selected()
                         .map(|x| (x + 20).min(app_state.vehicle.messages.len())),
-                );
-            }
+                ),
+
+                Screen::Parameters => app_state.parameters_list_state.select(
+                    app_state
+                        .parameters_list_state
+                        .selected()
+                        .map(|x| (x + 20).min(app_state.vehicle.parameter_messages.len())),
+                ),
+                Screen::Mission => {}
+            },
             KeyCode::Tab => {
                 let mut flag = false;
                 for item in Screen::iter().cycle() {

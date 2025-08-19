@@ -12,5 +12,5 @@ cargo build
 
 ## Plan
 [TODO] save settings/plan to local file, load from file 
-[TODO] parameters screen, last load, refresh
+[TODO] last load, refresh, sort
 [TODO] mission screen, last load, refresh

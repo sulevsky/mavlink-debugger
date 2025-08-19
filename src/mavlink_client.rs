@@ -14,6 +14,8 @@ pub fn connect(args: &Args, tx: mpsc::Sender<AppEvent>) -> Vehicle {
         connection: None,
         is_armed: false,
         messages: Vec::new(),
+        parameter_messages: Vec::new(),
+        last_parameters_request: None,
     };
     let connection = mavlink::connect::<mavlink::common::MavMessage>(&url.to_string()).ok();
     if connection.is_none() {
@@ -44,6 +46,22 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
                 // messages that didn't get through due to parser errors are ignored
                 _ => {}
             }
+        }
+    });
+}
+pub fn request_parameters(vehicle: &mut Vehicle) {
+    let connection = vehicle.connection.as_mut().unwrap().clone();
+    thread::spawn({
+        move || {
+            let param_request_list_message = mavlink::common::MavMessage::PARAM_REQUEST_LIST(
+                mavlink::common::PARAM_REQUEST_LIST_DATA {
+                    target_system: 1,
+                    target_component: 1,
+                },
+            );
+            connection
+                .send_default(&param_request_list_message)
+                .unwrap();
         }
     });
 }
