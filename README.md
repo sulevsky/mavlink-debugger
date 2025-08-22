@@ -12,5 +12,7 @@ cargo build
 
 ## Plan
 [TODO] save settings/plan to local file, load from file 
-[TODO] last load, refresh, sort
+[TODO] refresh
 [TODO] mission screen, last load, refresh
+[TODO] add asciicinema
+[TODO] tests for utils

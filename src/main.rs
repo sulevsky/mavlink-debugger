@@ -1,15 +1,16 @@
 mod cli;
 mod mavlink_client;
 mod utils;
+use chrono::{DateTime, Local};
 use clap::Parser;
 use mavlink::{MavConnection, Message};
 use ratatui::DefaultTerminal;
 use ratatui::layout::Rect;
 use ratatui::widgets::{List, ListItem, ListState, Padding, Tabs, Widget, Wrap};
 use std::sync::mpsc;
-use std::time::Instant;
 use std::{sync::Arc, thread};
 use strum::{Display, EnumIter, IntoEnumIterator};
+use utils::mavlink::decode_param_id;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::Frame;
@@ -29,7 +30,7 @@ use ratatui::{
 struct Vehicle {
     messages: Vec<MavMessage>,
     parameter_messages: Vec<PARAM_VALUE_DATA>,
-    last_parameters_request: Option<Instant>,
+    last_parameters_request: Option<DateTime<Local>>,
     connection: Option<Arc<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
     is_armed: bool,
 }
@@ -117,7 +118,7 @@ fn run(
     terminal: &mut DefaultTerminal,
     rx: mpsc::Receiver<AppEvent>,
 ) -> Result<()> {
-    let mut fps_limiter = utils::FPSLimiter::default(50);
+    let mut fps_limiter = utils::tui::FPSLimiter::default(50);
     while !app_state.is_exit {
         let app_event = rx.recv()?;
         match app_event {
@@ -133,7 +134,7 @@ fn run(
                     Screen::Parameters => {
                         if app_state.vehicle.last_parameters_request.is_none() {
                             request_parameters(&mut app_state.vehicle);
-                            app_state.vehicle.last_parameters_request = Some(Instant::now());
+                            app_state.vehicle.last_parameters_request = Some(Local::now());
                         }
                         terminal.draw(|frame| draw_parameters_screen(&mut app_state, frame))?;
                     }
@@ -153,6 +154,10 @@ fn run(
                     }
                     mavlink::common::MavMessage::PARAM_VALUE(data) => {
                         app_state.vehicle.parameter_messages.push(data);
+                        app_state
+                            .vehicle
+                            .parameter_messages
+                            .sort_by_key(|d| decode_param_id(&d.param_id));
                     }
                     _ => {}
                 }
@@ -190,7 +195,7 @@ fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
         .border_type(ratatui::widgets::BorderType::Thick)
         .render(tab_content, frame.buffer_mut());
 
-    let [headear_area, events_area, help_area] = Layout::vertical([
+    let [headear_area, _events_area, _help_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Fill(1),
         Constraint::Length(3),
@@ -200,8 +205,6 @@ fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
     let [connection_area, armed_area] =
         Layout::horizontal([Constraint::Length(50), Constraint::Max(14)]).areas(headear_area);
 
-    let [list_events_area, details_events_area] =
-        Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)]).areas(events_area);
     Paragraph::new(Line::from(vec![
         Span::from(" Address: "),
         Span::from(app_state.args.address.to_string()),
@@ -312,7 +315,6 @@ fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
     let [list_parameters_area, details_parameters_area] =
         Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)])
             .areas(parameters_area);
-
     let list_parameters_widget =
         create_list_parameters_widget(&app_state.vehicle.parameter_messages).block(
             Block::bordered()
@@ -320,7 +322,12 @@ fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
                 .title(" Parameters ".bold())
                 .title_bottom(
                     Line::from(format!(
-                        "Total: {}",
+                        "{}Total: {}",
+                        &app_state
+                            .vehicle
+                            .last_parameters_request
+                            .map(|t| format!("Loaded at: {}, ", t.format("%H:%M:%S").to_string()))
+                            .unwrap_or("".to_string()),
                         &app_state.vehicle.parameter_messages.len()
                     ))
                     .right_aligned(),
@@ -471,14 +478,6 @@ fn create_list_parameters_widget(parameter_messages: &Vec<PARAM_VALUE_DATA>) -> 
         })
         .collect();
     return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
-}
-
-fn decode_param_id(param_id: &[u8; 16]) -> String {
-    param_id
-        .iter()
-        .filter(|&b| *b != 0)
-        .map(|&b| char::from(b))
-        .collect()
 }
 
 fn handle_input_event(app_state: &mut AppState, event: Event) {
