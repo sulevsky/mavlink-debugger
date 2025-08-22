@@ -67,6 +67,7 @@ fn handle_input(tx: mpsc::Sender<AppEvent>) {
 #[derive(Default, Display, EnumIter, PartialEq)]
 enum Screen {
     #[default]
+    Status,
     Messages,
     Parameters,
     Mission,
@@ -90,7 +91,7 @@ impl AppState {
             is_exit: false,
             messages_list_state: ListState::default().with_selected(Some(0)),
             parameters_list_state: ListState::default().with_selected(Some(0)),
-            screen: Screen::Messages,
+            screen: Screen::Status,
         }
     }
     fn get_selected_message(&self) -> Option<MavMessage> {
@@ -123,6 +124,9 @@ fn run(
             AppEvent::Input(event) => {
                 handle_input_event(&mut app_state, event);
                 match app_state.screen {
+                    Screen::Status => {
+                        terminal.draw(|frame| draw_status_screen(&mut app_state, frame))?;
+                    }
                     Screen::Messages => {
                         terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
                     }
@@ -155,6 +159,9 @@ fn run(
 
                 if fps_limiter.check_allowed() {
                     match app_state.screen {
+                        Screen::Status => {
+                            terminal.draw(|frame| draw_status_screen(&mut app_state, frame))?;
+                        }
                         Screen::Messages => {
                             terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
                         }
@@ -172,7 +179,7 @@ fn run(
     Ok(())
 }
 
-fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
+fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
     let area = frame.area();
     let [tab_header, tab_content] =
         Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
@@ -219,6 +226,25 @@ fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     .block(Block::bordered().title(" Arm status ".bold()))
     .centered()
     .render(armed_area, frame.buffer_mut());
+}
+
+fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
+    let area = frame.area();
+    let [tab_header, tab_content] =
+        Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+
+    draw_tabs(tab_header, app_state, frame);
+
+    Block::bordered()
+        .border_type(ratatui::widgets::BorderType::Thick)
+        .render(tab_content, frame.buffer_mut());
+
+    let [events_area, help_area] = Layout::vertical([Constraint::Fill(1), Constraint::Length(3)])
+        .margin(1)
+        .areas(tab_content);
+
+    let [list_events_area, details_events_area] =
+        Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)]).areas(events_area);
 
     let list_events_widget = create_list_events_widget(&app_state.vehicle.messages).block(
         Block::bordered()
@@ -474,7 +500,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                     Screen::Parameters => {
                         app_state.parameters_list_state.select_next();
                     }
-                    Screen::Mission => {}
+                    _ => {}
                 },
                 'k' => match app_state.screen {
                     Screen::Messages => {
@@ -483,7 +509,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                     Screen::Parameters => {
                         app_state.parameters_list_state.select_previous();
                     }
-                    Screen::Mission => {}
+                    _ => {}
                 },
                 _ => {}
             },
@@ -498,7 +524,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                 Screen::Parameters => {
                     app_state.parameters_list_state.select_previous();
                 }
-                Screen::Mission => {}
+                _ => {}
             },
             KeyCode::Down => match app_state.screen {
                 Screen::Messages => {
@@ -507,7 +533,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                 Screen::Parameters => {
                     app_state.parameters_list_state.select_next();
                 }
-                Screen::Mission => {}
+                _ => {}
             },
             KeyCode::Home => match app_state.screen {
                 Screen::Messages => {
@@ -516,7 +542,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                 Screen::Parameters => {
                     app_state.parameters_list_state.select_first();
                 }
-                Screen::Mission => {}
+                _ => {}
             },
             KeyCode::End => match app_state.screen {
                 Screen::Messages => {
@@ -525,7 +551,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                 Screen::Parameters => {
                     app_state.parameters_list_state.select_last();
                 }
-                Screen::Mission => {}
+                _ => {}
             },
             KeyCode::PageUp => match app_state.screen {
                 Screen::Messages => app_state.messages_list_state.select(
@@ -540,7 +566,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                         .selected()
                         .map(|x| (x - 20).max(0)),
                 ),
-                Screen::Mission => {}
+                _ => {}
             },
 
             KeyCode::PageDown => match app_state.screen {
@@ -557,7 +583,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                         .selected()
                         .map(|x| (x + 20).min(app_state.vehicle.parameter_messages.len())),
                 ),
-                Screen::Mission => {}
+                _ => {}
             },
             KeyCode::Tab => {
                 let mut flag = false;
