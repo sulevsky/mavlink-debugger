@@ -31,7 +31,7 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
     thread::spawn({
         move || loop {
             match connection.recv() {
-                Ok((_, msg)) => tx.send(AppEvent::Mavlink(msg)).unwrap(),
+                Ok((_, msg)) => tx.send(AppEvent::Mavlink(Box::new(msg))).unwrap(),
                 Err(MessageReadError::Io(e)) => {
                     if e.kind() == std::io::ErrorKind::WouldBlock {
                         // println!("No messages");

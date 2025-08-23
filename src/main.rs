@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
 enum AppEvent {
     Input(crossterm::event::Event),
-    Mavlink(MavMessage),
+    Mavlink(Box<MavMessage>),
 }
 
 fn handle_input(tx: mpsc::Sender<AppEvent>) {
@@ -99,23 +99,23 @@ impl AppState {
     fn get_selected_message(&self) -> Option<MavMessage> {
         let selected_message_num = self.messages_list_state.selected();
         if let Some(index) = selected_message_num {
-            return self.vehicle.messages.get(index).cloned();
+            self.vehicle.messages.get(index).cloned()
         } else {
-            return None;
+            None
         }
     }
     fn get_selected_parameter(&self) -> Option<PARAM_VALUE_DATA> {
         let selected_parameter_num = self.parameters_list_state.selected();
         if let Some(index) = selected_parameter_num {
-            return self.vehicle.parameter_messages.get(index).cloned();
+            self.vehicle.parameter_messages.get(index).cloned()
         } else {
-            return None;
+            None
         }
     }
 }
 
 fn run(
-    mut app_state: &mut AppState,
+    app_state: &mut AppState,
     terminal: &mut DefaultTerminal,
     rx: mpsc::Receiver<AppEvent>,
 ) -> Result<()> {
@@ -124,29 +124,29 @@ fn run(
         let app_event = rx.recv()?;
         match app_event {
             AppEvent::Input(event) => {
-                handle_input_event(&mut app_state, event);
+                handle_input_event(app_state, event);
                 match app_state.screen {
                     Screen::Status => {
-                        terminal.draw(|frame| draw_status_screen(&mut app_state, frame))?;
+                        terminal.draw(|frame| draw_status_screen(app_state, frame))?;
                     }
                     Screen::Messages => {
-                        terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                        terminal.draw(|frame| draw_messages_screen(app_state, frame))?;
                     }
                     Screen::Parameters => {
                         if app_state.vehicle.last_parameters_request.is_none() {
                             request_parameters(&mut app_state.vehicle);
                             app_state.vehicle.last_parameters_request = Some(Local::now());
                         }
-                        terminal.draw(|frame| draw_parameters_screen(&mut app_state, frame))?;
+                        terminal.draw(|frame| draw_parameters_screen(app_state, frame))?;
                     }
                     Screen::Mission => {
-                        terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                        terminal.draw(|frame| draw_messages_screen(app_state, frame))?;
                     }
                 }
             }
             AppEvent::Mavlink(mav_message) => {
-                app_state.vehicle.messages.push(mav_message.clone());
-                match mav_message {
+                app_state.vehicle.messages.push(*mav_message.clone());
+                match *mav_message {
                     mavlink::common::MavMessage::HEARTBEAT(data) => {
                         let is_armed = data
                             .base_mode
@@ -166,16 +166,16 @@ fn run(
                 if fps_limiter.check_allowed(SystemTime::now()) {
                     match app_state.screen {
                         Screen::Status => {
-                            terminal.draw(|frame| draw_status_screen(&mut app_state, frame))?;
+                            terminal.draw(|frame| draw_status_screen(app_state, frame))?;
                         }
                         Screen::Messages => {
-                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                            terminal.draw(|frame| draw_messages_screen(app_state, frame))?;
                         }
                         Screen::Parameters => {
-                            terminal.draw(|frame| draw_parameters_screen(&mut app_state, frame))?;
+                            terminal.draw(|frame| draw_parameters_screen(app_state, frame))?;
                         }
                         Screen::Mission => {
-                            terminal.draw(|frame| draw_messages_screen(&mut app_state, frame))?;
+                            terminal.draw(|frame| draw_messages_screen(app_state, frame))?;
                         }
                     }
                 }
@@ -220,12 +220,10 @@ fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
 
     Paragraph::new(if app_state.vehicle.connection.is_none() {
         Span::from("Unknown").gray()
+    } else if app_state.vehicle.is_armed {
+        Span::from(" Armed ").green()
     } else {
-        if app_state.vehicle.is_armed {
-            Span::from(" Armed ").green()
-        } else {
-            Span::from(" Disarmed ").red()
-        }
+        Span::from(" Disarmed ").red()
     })
     .block(Block::bordered().title(" Arm status ".bold()))
     .centered()
@@ -327,7 +325,7 @@ fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
                         &app_state
                             .vehicle
                             .last_parameters_request
-                            .map(|t| format!("Loaded at: {}, ", t.format("%H:%M:%S").to_string()))
+                            .map(|t| format!("Loaded at: {}, ", t.format("%H:%M:%S")))
                             .unwrap_or("".to_string()),
                         &app_state.vehicle.parameter_messages.len()
                     ))
@@ -362,7 +360,7 @@ fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'sta
         let mut lines = vec![
             Line::from(format!("Name: {} ", m.message_name())),
             Line::from(format!("Id:   {} ", m.message_id())),
-            Line::from(format!("")),
+            Line::from(""),
         ];
         match &m {
             MavMessage::HEARTBEAT(data) => {
@@ -399,9 +397,9 @@ fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'sta
                 lines.extend(l);
             }
         };
-        lines.push(Line::from(format!("")));
-        lines.push(Line::from(format!("---------------------------------")));
-        lines.push(Line::from(format!("Raw Message:")));
+        lines.push(Line::from(""));
+        lines.push(Line::from("---------------------------------"));
+        lines.push(Line::from("Raw Message:"));
         lines.push(Line::from(format!("{:?} ", m)));
         Paragraph::new(lines).wrap(Wrap { trim: false })
     } else {
@@ -414,9 +412,9 @@ fn create_parameter_details_paragraph(parameter: Option<PARAM_VALUE_DATA>) -> Pa
         let lines = vec![
             Line::from(format!("Id:       {} ", decode_param_id(&param.param_id))),
             Line::from(format!("Value:    {} ", param.param_value)),
-            Line::from(format!("")),
-            Line::from(format!("---------------------------------")),
-            Line::from(format!("Raw parameter:")),
+            Line::from(""),
+            Line::from("---------------------------------"),
+            Line::from("Raw parameter:"),
             Line::from(format!("{:?} ", param)),
         ];
         Paragraph::new(lines).wrap(Wrap { trim: false })
@@ -431,54 +429,52 @@ fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
         if let Some(brackets_end) = original.find("}") {
             let details = original[brackets_start + 1..brackets_end]
                 .trim()
-                .to_string()
                 .split(",")
                 .filter(|val| val.contains(":"))
                 .map(|val| val.split(":").map(|el| el.trim()).collect::<Vec<_>>())
                 .map(|val| {
                     (
-                        val.get(0).unwrap().to_string(),
-                        val.get(1).unwrap().to_string(),
+                        val.first().unwrap().to_string(),
+                        val.last().unwrap().to_string(),
                     )
                 })
                 .collect::<Vec<_>>();
-            let padded = details
+            return details
                 .iter()
-                .map(|val| (format!("{:<20}", &val.0).to_string(), val.1.clone()))
+                .map(|val| (format!("{:<20}", &val.0), val.1.clone()))
                 .collect::<Vec<_>>();
-            return padded;
         }
     }
-    return vec![];
+    vec![]
 }
 
-fn create_list_events_widget(messages: &Vec<MavMessage>) -> List<'static> {
-    let logs: Vec<ListItem> = messages
+fn create_list_events_widget(messages: &[MavMessage]) -> List<'static> {
+    let logs = messages
         .iter()
         .enumerate()
         .map(|(i, m)| {
             let content = Line::from(vec![
                 Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
-                Span::raw(format!("{}", m.message_name())),
+                Span::from(m.message_name().to_string()),
             ]);
             ListItem::new(content)
-        })
-        .collect();
-    return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
+        });
+
+    List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
 }
-fn create_list_parameters_widget(parameter_messages: &Vec<PARAM_VALUE_DATA>) -> List<'static> {
-    let logs: Vec<ListItem> = parameter_messages
+
+fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> List<'static> {
+    let logs = parameter_messages
         .iter()
         .enumerate()
         .map(|(i, m)| {
             let content = Line::from(vec![
                 Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
-                Span::raw(format!("{}", decode_param_id(&m.param_id))),
+                Span::from(decode_param_id(&m.param_id)),
             ]);
             ListItem::new(content)
-        })
-        .collect();
-    return List::new(logs).highlight_style(Style::default().bg(Color::Yellow));
+        });
+    List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
 }
 
 fn handle_input_event(app_state: &mut AppState, event: Event) {

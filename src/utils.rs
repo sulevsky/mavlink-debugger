@@ -9,20 +9,20 @@ pub mod tui {
     impl FPSLimiter {
         pub fn default(max_fps: u32) -> Self {
             let refresh_rate = Duration::from_micros(1_000_000 / (max_fps as u64));
-            return FPSLimiter {
+            FPSLimiter {
                 refresh_rate,
                 allowed_at: None,
-            };
+            }
         }
 
         pub fn check_allowed(&mut self, now: SystemTime) -> bool {
             match self.allowed_at {
                 Some(allowed_at) => {
                     if allowed_at >= now {
-                        return false;
+                        false
                     } else {
                         self.allowed_at = Some(now + self.refresh_rate);
-                        return true;
+                        true
                     }
                 }
                 None => {
