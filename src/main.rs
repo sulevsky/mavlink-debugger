@@ -8,6 +8,7 @@ use ratatui::DefaultTerminal;
 use ratatui::layout::Rect;
 use ratatui::widgets::{List, ListItem, ListState, Padding, Tabs, Widget, Wrap};
 use std::sync::mpsc;
+use std::time::SystemTime;
 use std::{sync::Arc, thread};
 use strum::{Display, EnumIter, IntoEnumIterator};
 use utils::mavlink::decode_param_id;
@@ -162,7 +163,7 @@ fn run(
                     _ => {}
                 }
 
-                if fps_limiter.check_allowed() {
+                if fps_limiter.check_allowed(SystemTime::now()) {
                     match app_state.screen {
                         Screen::Status => {
                             terminal.draw(|frame| draw_status_screen(&mut app_state, frame))?;

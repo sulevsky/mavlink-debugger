@@ -2,7 +2,12 @@
 
 ## Build
 ```sh
-cargo build 
+cargo build
+```
+
+## Test
+```sh
+cargo test
 ```
 
 ## Run
@@ -11,8 +16,11 @@ cargo build
 ```
 
 ## Plan
-[TODO] save settings/plan to local file, load from file 
-[TODO] refresh
-[TODO] mission screen, last load, refresh
+[TODO] parameters refresh
+[TODO] mission screen,
+[TODO] mission last load
+[TODO] mission refresh
 [TODO] add asciicinema
-[TODO] tests for utils
+[TODO] mission edit
+[TODO] parameters edit
+[TODO] save settings/plan to local file, load from file 
