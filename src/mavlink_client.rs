@@ -1,23 +1,22 @@
 use std::sync::mpsc;
 use std::{sync::Arc, thread, time::Duration};
 
+use mavlink::common::MavMessage;
 use mavlink::error::MessageReadError;
 
-use crate::cli::Args;
 use crate::{AppEvent, Vehicle};
 
-pub fn connect(args: &Args, tx: mpsc::Sender<AppEvent>) -> Vehicle {
-    let url = &args.address;
-
-    // It's possible to change the mavlink dialect to be used in the connect call
+pub fn connect(address: &str, tx: mpsc::Sender<AppEvent>) -> Vehicle {
     let mut vehicle = Vehicle {
+        messages: Vec::new(),
         connection: None,
         is_armed: false,
-        messages: Vec::new(),
         parameter_messages: Vec::new(),
         last_parameters_request: None,
+        mission_messages: Vec::new(),
+        last_mission_request: None,
     };
-    let connection = mavlink::connect::<mavlink::common::MavMessage>(&url.to_string()).ok();
+    let connection = mavlink::connect::<mavlink::common::MavMessage>(address).ok();
     if connection.is_none() {
         return vehicle;
     }
@@ -50,18 +49,36 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
     });
 }
 pub fn request_parameters(vehicle: &mut Vehicle) {
+    let param_request_list_message =
+        mavlink::common::MavMessage::PARAM_REQUEST_LIST(mavlink::common::PARAM_REQUEST_LIST_DATA {
+            target_system: 1,
+            target_component: 1,
+        });
+    send_message(vehicle, param_request_list_message);
+}
+
+pub fn request_mission(vehicle: &mut Vehicle) {
+    let mission_request_list_message = mavlink::common::MavMessage::MISSION_REQUEST_LIST(
+        mavlink::common::MISSION_REQUEST_LIST_DATA {
+            target_system: 1,
+            target_component: 1,
+        },
+    );
+    // TODO vova sedn for count, save count, request tiems
+    send_message(vehicle, mission_request_list_message);
+    for i in 0..7 {
+        let mission_request_int_message = mavlink::common::MavMessage::MISSION_REQUEST_INT(
+            mavlink::common::MISSION_REQUEST_INT_DATA {
+                target_system: 1,
+                target_component: 1,
+                seq: i,
+            },
+        );
+        send_message(vehicle, mission_request_int_message);
+    }
+}
+
+fn send_message(vehicle: &mut Vehicle, message: MavMessage) {
     let connection = vehicle.connection.as_mut().unwrap().clone();
-    thread::spawn({
-        move || {
-            let param_request_list_message = mavlink::common::MavMessage::PARAM_REQUEST_LIST(
-                mavlink::common::PARAM_REQUEST_LIST_DATA {
-                    target_system: 1,
-                    target_component: 1,
-                },
-            );
-            connection
-                .send_default(&param_request_list_message)
-                .unwrap();
-        }
-    });
+    connection.send_default(&message).unwrap();
 }

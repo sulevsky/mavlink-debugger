@@ -5,7 +5,7 @@
 cargo build
 ```
 
-## Test
+## Run tests
 ```sh
 cargo test
 ```
@@ -16,10 +16,12 @@ cargo test
 ```
 
 ## Plan
-[TODO] mission screen
-[TODO] mission last load
-[TODO] mission refresh
+[TODO] mission item pretty print 
+[TODO] mission load in sequence
 [TODO] add asciicinema
+[TODO] parametrise system_id and component_id 
+[TODO] check mavlink async methods instead of thread 
 [TODO] mission edit
+[TODO] enter button
 [TODO] parameters edit
 [TODO] save settings/plan to local file, load from file 
