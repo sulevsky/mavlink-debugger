@@ -112,6 +112,11 @@ impl AppState {
             None
         }
     }
+    fn clear_parameters(&mut self) {
+        self.vehicle.parameter_messages.clear();
+        self.vehicle.last_parameters_request = None;
+        self.parameters_list_state.select_first();
+    }
 }
 
 fn run(
@@ -314,29 +319,40 @@ fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
     let [list_parameters_area, details_parameters_area] =
         Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)])
             .areas(parameters_area);
+    let [
+        list_parameters_brief_area,
+        details_parameters_statistics_area,
+    ] = Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).areas(list_parameters_area);
     let list_parameters_widget =
         create_list_parameters_widget(&app_state.vehicle.parameter_messages).block(
             Block::bordered()
                 .padding(Padding::horizontal(1))
-                .title(" Parameters ".bold())
-                .title_bottom(
-                    Line::from(format!(
-                        "{}Total: {}",
-                        &app_state
-                            .vehicle
-                            .last_parameters_request
-                            .map(|t| format!("Loaded at: {}, ", t.format("%H:%M:%S")))
-                            .unwrap_or("".to_string()),
-                        &app_state.vehicle.parameter_messages.len()
-                    ))
-                    .right_aligned(),
-                ),
+                .title(" Parameters ".bold()),
         );
     frame.render_stateful_widget(
         list_parameters_widget,
-        list_parameters_area,
+        list_parameters_brief_area,
         &mut app_state.parameters_list_state,
     );
+
+    List::new(vec![
+        Line::from(format!(
+            "Loaded at: {}",
+            &app_state
+                .vehicle
+                .last_parameters_request
+                .map(|t| t.format("%H:%M:%S").to_string())
+                .unwrap_or("Not loaded".to_string())
+        )),
+        Line::from(format!(
+            "Total:     {}",
+            &app_state.vehicle.parameter_messages.len()
+        )),
+        Line::from(""),
+        Line::from("Press (r) to refresh"),
+    ])
+    .block(Block::bordered().padding(Padding::horizontal(1)))
+    .render(details_parameters_statistics_area, frame.buffer_mut());
 
     create_parameter_details_paragraph(app_state.get_selected_parameter())
         .block(
@@ -449,31 +465,25 @@ fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
 }
 
 fn create_list_events_widget(messages: &[MavMessage]) -> List<'static> {
-    let logs = messages
-        .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            let content = Line::from(vec![
-                Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
-                Span::from(m.message_name().to_string()),
-            ]);
-            ListItem::new(content)
-        });
+    let logs = messages.iter().enumerate().map(|(i, m)| {
+        let content = Line::from(vec![
+            Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
+            Span::from(m.message_name().to_string()),
+        ]);
+        ListItem::new(content)
+    });
 
     List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
 }
 
 fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> List<'static> {
-    let logs = parameter_messages
-        .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            let content = Line::from(vec![
-                Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
-                Span::from(decode_param_id(&m.param_id)),
-            ]);
-            ListItem::new(content)
-        });
+    let logs = parameter_messages.iter().enumerate().map(|(i, m)| {
+        let content = Line::from(vec![
+            Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
+            Span::from(decode_param_id(&m.param_id)),
+        ]);
+        ListItem::new(content)
+    });
     List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
 }
 
@@ -507,6 +517,11 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                     }
                     _ => {}
                 },
+                'r' => {
+                    if let Screen::Parameters = app_state.screen {
+                        app_state.clear_parameters();
+                    }
+                }
                 _ => {}
             },
 

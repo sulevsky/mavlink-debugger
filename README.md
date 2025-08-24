@@ -16,8 +16,7 @@ cargo test
 ```
 
 ## Plan
-[TODO] parameters refresh
-[TODO] mission screen,
+[TODO] mission screen
 [TODO] mission last load
 [TODO] mission refresh
 [TODO] add asciicinema
