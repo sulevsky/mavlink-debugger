@@ -5,6 +5,7 @@ use chrono::DateTime;
 use chrono::Local;
 use clap::Parser;
 use mavlink::MavConnection;
+use mavlink::MavFrame;
 use ratatui::DefaultTerminal;
 use ratatui::widgets::TableState;
 use std::sync::Arc;
@@ -39,6 +40,11 @@ struct MissionDetails {
     last_mission_request: Option<DateTime<Local>>,
     mission_items_to_load_num: Option<u16>,
 }
+#[derive(Default, Clone)]
+struct TargetDetails {
+    target_system_id: u8,
+    target_component_id: u8,
+}
 
 #[derive(Default)]
 struct Vehicle {
@@ -47,6 +53,7 @@ struct Vehicle {
     is_armed: bool,
     last_parameters_request: Option<DateTime<Local>>,
     connection: Option<Arc<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    target_details: Option<TargetDetails>,
     mission_details: Mutex<MissionDetails>,
 }
 fn main() -> Result<()> {
@@ -67,7 +74,7 @@ fn main() -> Result<()> {
 
 enum AppEvent {
     Input(crossterm::event::Event),
-    Mavlink(Box<MavMessage>),
+    Mavlink(Box<MavFrame<MavMessage>>),
 }
 
 fn handle_input(tx: mpsc::Sender<AppEvent>) {
@@ -189,13 +196,17 @@ fn run(
                     }
                 }
             }
-            AppEvent::Mavlink(mav_message) => {
-                app_state.vehicle.messages.push(*mav_message.clone());
-                match *mav_message {
+            AppEvent::Mavlink(mav_frame) => {
+                app_state.vehicle.messages.push(mav_frame.msg.clone());
+                match mav_frame.msg {
                     mavlink::common::MavMessage::HEARTBEAT(data) => {
                         let is_armed = data
                             .base_mode
                             .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED);
+                        app_state.vehicle.target_details = Some(TargetDetails {
+                            target_system_id: mav_frame.header.system_id,
+                            target_component_id: mav_frame.header.component_id,
+                        });
                         app_state.vehicle.is_armed = is_armed;
                     }
                     mavlink::common::MavMessage::PARAM_VALUE(data) => {

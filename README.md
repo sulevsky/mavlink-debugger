@@ -17,7 +17,6 @@ cargo test
 
 ## Plan
 [TODO] add asciicinema
-[TODO] parametrise system_id and component_id 
 [TODO] mission edit
 [TODO] enter button
 [TODO] parameters edit

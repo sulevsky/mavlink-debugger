@@ -29,7 +29,7 @@ use crate::utils::mavlink::decode_param_id;
 
 use strum::IntoEnumIterator;
 
-pub fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
+pub fn draw_status_screen(app_state: &AppState, frame: &mut Frame) {
     let area = frame.area();
     let [tab_header, tab_content] =
         Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
@@ -40,15 +40,19 @@ pub fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
         .border_type(ratatui::widgets::BorderType::Thick)
         .render(tab_content, frame.buffer_mut());
 
-    let [headear_area, _events_area, _help_area] = Layout::vertical([
+    let [headear_area, _, _help_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Fill(1),
         Constraint::Length(3),
     ])
     .margin(1)
     .areas(tab_content);
-    let [connection_area, armed_area] =
-        Layout::horizontal([Constraint::Length(50), Constraint::Max(14)]).areas(headear_area);
+    let [connection_area, armed_area, id_area] = Layout::horizontal([
+        Constraint::Length(50),
+        Constraint::Length(14),
+        Constraint::Length(60),
+    ])
+    .areas(headear_area);
 
     Paragraph::new(Line::from(vec![
         Span::from(" Address: "),
@@ -72,6 +76,26 @@ pub fn draw_status_screen(app_state: &mut AppState, frame: &mut Frame) {
     .block(Block::bordered().title(" Arm status ".bold()))
     .centered()
     .render(armed_area, frame.buffer_mut());
+
+    let (target_system_id, target_component_id) = app_state.vehicle.target_details.as_ref().map_or(
+        ("unknown".to_string(), "unknown".to_string()),
+        |x| {
+            (
+                x.target_system_id.to_string(),
+                x.target_component_id.to_string(),
+            )
+        },
+    );
+
+    Paragraph::new(Line::from(vec![
+        Span::from("Target system id: "),
+        Span::from(target_system_id).bold().green(),
+        Span::from(", target component id: "),
+        Span::from(target_component_id).bold().green(),
+    ]))
+    .block(Block::bordered())
+    .centered()
+    .render(id_area, frame.buffer_mut());
 }
 
 pub fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
@@ -123,7 +147,7 @@ pub fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     .render(help_area, frame.buffer_mut());
 }
 
-fn draw_tabs(tab_header: Rect, app_state: &mut AppState, frame: &mut Frame) {
+fn draw_tabs(tab_header: Rect, app_state: &AppState, frame: &mut Frame) {
     let tab_index = Screen::iter()
         .position(|x| x == app_state.screen)
         .unwrap_or(0);

@@ -7,6 +7,7 @@ use mavlink::common::MavMessage;
 use mavlink::error::MessageReadError;
 
 use crate::AppEvent;
+use crate::TargetDetails;
 use crate::Vehicle;
 
 pub fn connect(address: &str, tx: mpsc::Sender<AppEvent>) -> Vehicle {
@@ -24,8 +25,8 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
     let connection = vehicle.connection.as_mut().unwrap().clone();
     thread::spawn({
         move || loop {
-            match connection.recv() {
-                Ok((_, msg)) => tx.send(AppEvent::Mavlink(Box::new(msg))).unwrap(),
+            match connection.recv_frame() {
+                Ok(frame) => tx.send(AppEvent::Mavlink(Box::new(frame))).unwrap(),
                 Err(MessageReadError::Io(e)) => {
                     if e.kind() == std::io::ErrorKind::WouldBlock {
                         // println!("No messages");
@@ -44,19 +45,35 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
     });
 }
 pub fn request_parameters(vehicle: &mut Vehicle) {
+    if vehicle.target_details.is_none() {
+        return;
+    }
+    let TargetDetails {
+        target_system_id,
+        target_component_id,
+    } = vehicle.target_details.clone().unwrap();
+
     let param_request_list_message =
         mavlink::common::MavMessage::PARAM_REQUEST_LIST(mavlink::common::PARAM_REQUEST_LIST_DATA {
-            target_system: 1,
-            target_component: 1,
+            target_system: target_system_id,
+            target_component: target_component_id,
         });
     send_message(vehicle, param_request_list_message);
 }
 
 pub fn request_mission_count(vehicle: &mut Vehicle) {
+    if vehicle.target_details.is_none() {
+        return;
+    }
+    let TargetDetails {
+        target_system_id,
+        target_component_id,
+    } = vehicle.target_details.clone().unwrap();
+
     let mission_request_list_message = mavlink::common::MavMessage::MISSION_REQUEST_LIST(
         mavlink::common::MISSION_REQUEST_LIST_DATA {
-            target_system: 1,
-            target_component: 1,
+            target_system: target_system_id,
+            target_component: target_component_id,
         },
     );
     send_message(vehicle, mission_request_list_message);
@@ -64,14 +81,22 @@ pub fn request_mission_count(vehicle: &mut Vehicle) {
 
 pub fn synchronise_mission_items(vehicle: &Vehicle) {
     let mission_details = vehicle.mission_details.lock().unwrap();
+    if vehicle.target_details.is_none() {
+        return;
+    }
+    let TargetDetails {
+        target_system_id,
+        target_component_id,
+    } = vehicle.target_details.clone().unwrap();
+
     if let Some(to_load_num) = mission_details.mission_items_to_load_num {
         let all_loaded = to_load_num as usize == mission_details.mission_messages.len();
         if !all_loaded {
             for i in 0..to_load_num {
                 let mission_request_int_message = mavlink::common::MavMessage::MISSION_REQUEST_INT(
                     mavlink::common::MISSION_REQUEST_INT_DATA {
-                        target_system: 1,
-                        target_component: 1,
+                        target_system: target_system_id,
+                        target_component: target_component_id,
                         seq: i,
                     },
                 );
