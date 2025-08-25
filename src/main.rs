@@ -5,7 +5,7 @@ use chrono::{DateTime, Local};
 use clap::Parser;
 use mavlink::MavConnection;
 use ratatui::DefaultTerminal;
-use ratatui::widgets::ListState;
+use ratatui::widgets::TableState;
 use std::sync::mpsc;
 use std::time::SystemTime;
 use std::{sync::Arc, thread};
@@ -76,9 +76,9 @@ pub struct AppState {
 
     vehicle: Vehicle,
 
-    messages_list_state: ListState,
-    parameters_list_state: ListState,
-    mission_list_state: ListState,
+    messages_table_state: TableState,
+    parameters_table_state: TableState,
+    mission_table_state: TableState,
 
     is_exit: bool,
     screen: Screen,
@@ -89,14 +89,14 @@ impl AppState {
             args,
             vehicle,
             is_exit: false,
-            messages_list_state: ListState::default().with_selected(Some(0)),
-            parameters_list_state: ListState::default().with_selected(Some(0)),
-            mission_list_state: ListState::default().with_selected(Some(0)),
+            messages_table_state: TableState::default().with_selected(Some(0)),
+            parameters_table_state: TableState::default().with_selected(Some(0)),
+            mission_table_state: TableState::default().with_selected(Some(0)),
             screen: Screen::Status,
         }
     }
     fn get_selected_message(&self) -> Option<MavMessage> {
-        let selected_message_num = self.messages_list_state.selected();
+        let selected_message_num = self.messages_table_state.selected();
         if let Some(index) = selected_message_num {
             self.vehicle.messages.get(index).cloned()
         } else {
@@ -104,30 +104,23 @@ impl AppState {
         }
     }
     fn get_selected_parameter(&self) -> Option<PARAM_VALUE_DATA> {
-        let selected_parameter_num = self.parameters_list_state.selected();
+        let selected_parameter_num = self.parameters_table_state.selected();
         if let Some(index) = selected_parameter_num {
             self.vehicle.parameter_messages.get(index).cloned()
         } else {
             None
         }
     }
-    fn get_selected_mission_item(&self) -> Option<MISSION_ITEM_INT_DATA> {
-        let selected_mission_item_num = self.mission_list_state.selected();
-        if let Some(index) = selected_mission_item_num {
-            self.vehicle.mission_messages.get(index).cloned()
-        } else {
-            None
-        }
-    }
+
     fn clear_parameters(&mut self) {
         self.vehicle.parameter_messages.clear();
         self.vehicle.last_parameters_request = None;
-        self.parameters_list_state.select_first();
+        self.parameters_table_state.select_first();
     }
     fn clear_mission(&mut self) {
         self.vehicle.mission_messages.clear();
         self.vehicle.last_mission_request = None;
-        self.mission_list_state.select_first();
+        self.mission_table_state.select_first();
     }
 }
 
@@ -313,11 +306,11 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
     }
 }
 
-fn choose_list_state(app_state: &mut AppState) -> Option<&mut ListState> {
+fn choose_list_state(app_state: &mut AppState) -> Option<&mut TableState> {
     match app_state.screen {
         Screen::Status => None,
-        Screen::Messages => Some(&mut app_state.messages_list_state),
-        Screen::Parameters => Some(&mut app_state.parameters_list_state),
-        Screen::Mission => Some(&mut app_state.mission_list_state),
+        Screen::Messages => Some(&mut app_state.messages_table_state),
+        Screen::Parameters => Some(&mut app_state.parameters_table_state),
+        Screen::Mission => Some(&mut app_state.mission_table_state),
     }
 }

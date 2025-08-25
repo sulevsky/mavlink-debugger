@@ -1,11 +1,13 @@
 use mavlink::Message;
 use mavlink::common::{MISSION_ITEM_INT_DATA, MavMessage, PARAM_VALUE_DATA};
+use ratatui::text::Text;
+use ratatui::widgets::{Cell, Row, Table};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, Padding, Paragraph, Tabs, Widget, Wrap},
+    widgets::{Block, List, Padding, Paragraph, Tabs, Widget, Wrap},
 };
 
 use crate::{AppState, Screen, utils::mavlink::decode_param_id};
@@ -86,7 +88,7 @@ pub fn draw_messages_screen(app_state: &mut AppState, frame: &mut Frame) {
     frame.render_stateful_widget(
         list_events_widget,
         list_events_area,
-        &mut app_state.messages_list_state,
+        &mut app_state.messages_table_state,
     );
 
     create_event_details_paragraph(app_state.get_selected_message())
@@ -154,7 +156,7 @@ pub fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
     frame.render_stateful_widget(
         list_parameters_widget,
         list_parameters_brief_area,
-        &mut app_state.parameters_list_state,
+        &mut app_state.parameters_table_state,
     );
 
     List::new(vec![
@@ -208,10 +210,8 @@ pub fn draw_mission_screen(app_state: &mut AppState, frame: &mut Frame) {
         .margin(1)
         .areas(tab_content);
 
-    let [list_mission_area, mission_item_area] =
-        Layout::horizontal([Constraint::Min(50), Constraint::Percentage(100)]).areas(mission_area);
     let [list_mission_items_area, details_mission_statistics_area] =
-        Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).areas(list_mission_area);
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).areas(mission_area);
     let list_mission_items_widget =
         create_list_mission_items_widget(&app_state.vehicle.mission_messages).block(
             Block::bordered()
@@ -221,7 +221,7 @@ pub fn draw_mission_screen(app_state: &mut AppState, frame: &mut Frame) {
     frame.render_stateful_widget(
         list_mission_items_widget,
         list_mission_items_area,
-        &mut app_state.mission_list_state,
+        &mut app_state.mission_table_state,
     );
 
     List::new(vec![
@@ -242,14 +242,6 @@ pub fn draw_mission_screen(app_state: &mut AppState, frame: &mut Frame) {
     ])
     .block(Block::bordered().padding(Padding::horizontal(1)))
     .render(details_mission_statistics_area, frame.buffer_mut());
-
-    create_mission_item_details_paragraph(app_state.get_selected_mission_item())
-        .block(
-            Block::bordered()
-                .padding(Padding::uniform(1))
-                .title(" Mission item details ".bold()),
-        )
-        .render(mission_item_area, frame.buffer_mut());
 
     Paragraph::new(
         Span::from("(Esc|q) quit | (↑/↓) previous/next | (Home/End) first/last | (Tab) change tab")
@@ -308,7 +300,7 @@ fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'sta
         lines.push(Line::from(format!("{:?} ", m)));
         Paragraph::new(lines).wrap(Wrap { trim: false })
     } else {
-        Paragraph::new(Line::from(" Please select event "))
+        Paragraph::new(Line::from(" Select message "))
     }
 }
 
@@ -324,26 +316,7 @@ fn create_parameter_details_paragraph(parameter: Option<PARAM_VALUE_DATA>) -> Pa
         ];
         Paragraph::new(lines).wrap(Wrap { trim: false })
     } else {
-        Paragraph::new(Line::from(" Please select parameter "))
-    }
-}
-
-fn create_mission_item_details_paragraph(
-    parameter: Option<MISSION_ITEM_INT_DATA>,
-) -> Paragraph<'static> {
-    if let Some(param) = parameter {
-        let lines = vec![
-            // TODO vova proper format
-            // Line::from(format!("Id:       {} ", decode_param_id(&param.param_id))),
-            // Line::from(format!("Value:    {} ", param.param_value)),
-            // Line::from(""),
-            Line::from("---------------------------------"),
-            Line::from("Raw parameter:"),
-            Line::from(format!("{:?} ", param)),
-        ];
-        Paragraph::new(lines).wrap(Wrap { trim: false })
-    } else {
-        Paragraph::new(Line::from(" Please select mission item "))
+        Paragraph::new(Line::from(" Select parameter "))
     }
 }
 
@@ -372,36 +345,56 @@ fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
     vec![]
 }
 
-fn create_list_events_widget(messages: &[MavMessage]) -> List<'static> {
-    let logs = messages.iter().enumerate().map(|(i, m)| {
-        let content = Line::from(vec![
+fn create_list_events_widget(messages: &[MavMessage]) -> Table<'static> {
+    let rows = messages.iter().enumerate().map(|(i, m)| {
+        let cell = Cell::default().content(Line::from(vec![
             Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
             Span::from(m.message_name().to_string()),
-        ]);
-        ListItem::new(content)
+        ]));
+        Row::new(vec![cell])
     });
 
-    List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
+    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Yellow))
 }
 
-fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> List<'static> {
-    let logs = parameter_messages.iter().enumerate().map(|(i, m)| {
-        let content = Line::from(vec![
+fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> Table<'static> {
+    let rows = parameter_messages.iter().enumerate().map(|(i, m)| {
+        let cell = Cell::default().content(Line::from(vec![
             Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
             Span::from(decode_param_id(&m.param_id)),
-        ]);
-        ListItem::new(content)
+        ]));
+        Row::new(vec![cell])
     });
-    List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
+    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Yellow))
 }
 
-fn create_list_mission_items_widget(mission_items: &[MISSION_ITEM_INT_DATA]) -> List<'static> {
-    let logs = mission_items.iter().enumerate().map(|(i, m)| {
-        let content = Line::from(vec![
-            Span::from(format!("{:>4}  ", i)).style(Color::Magenta),
-            Span::from(format!("{:?}", m.command)),
-        ]);
-        ListItem::new(content)
+fn create_list_mission_items_widget(mission_items: &[MISSION_ITEM_INT_DATA]) -> Table<'static> {
+    let header = ["Seq", "Command", "Frame", "x", "y", "z"]
+        .into_iter()
+        .map(Cell::from)
+        .collect::<Row>()
+        .height(1);
+    let rows = mission_items.iter().enumerate().map(|(i, m)| {
+        Row::new(vec![
+            Cell::from(Text::from(format!("{}  ", i)).style(Color::Magenta)),
+            Cell::from(Text::from(format!("{:?} ", m.command))),
+            Cell::from(Text::from(format!("{:?} ", m.frame))),
+            Cell::from(Text::from(format!("{:?} ", m.x)).red()),
+            Cell::from(Text::from(format!("{:?} ", m.y)).green()),
+            Cell::from(Text::from(format!("{:?} ", m.z)).blue()),
+        ])
     });
-    List::new(logs).highlight_style(Style::default().bg(Color::Yellow))
+    Table::new(
+        rows,
+        [
+            Constraint::Length(5),
+            Constraint::Length(30),
+            Constraint::Length(40),
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Length(12),
+        ],
+    )
+    .header(header)
+    .row_highlight_style(Style::default().bg(Color::Yellow))
 }

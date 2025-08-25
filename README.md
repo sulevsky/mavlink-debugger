@@ -16,7 +16,7 @@ cargo test
 ```
 
 ## Plan
-[TODO] mission item pretty print 
+[TODO] next to 0 is last 
 [TODO] mission load in sequence
 [TODO] add asciicinema
 [TODO] parametrise system_id and component_id 
