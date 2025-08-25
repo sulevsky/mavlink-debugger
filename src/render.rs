@@ -1,16 +1,31 @@
 use mavlink::Message;
-use mavlink::common::{MISSION_ITEM_INT_DATA, MavMessage, PARAM_VALUE_DATA};
+use mavlink::common::MISSION_ITEM_INT_DATA;
+use mavlink::common::MavMessage;
+use mavlink::common::PARAM_VALUE_DATA;
+use ratatui::Frame;
+use ratatui::layout::Constraint;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::text::Text;
-use ratatui::widgets::{Cell, Row, Table};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span},
-    widgets::{Block, List, Padding, Paragraph, Tabs, Widget, Wrap},
-};
+use ratatui::widgets::Block;
+use ratatui::widgets::Cell;
+use ratatui::widgets::List;
+use ratatui::widgets::Padding;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Row;
+use ratatui::widgets::Table;
+use ratatui::widgets::Tabs;
+use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 
-use crate::{AppState, Screen, utils::mavlink::decode_param_id};
+use crate::AppState;
+use crate::Screen;
+use crate::utils::mavlink::decode_param_id;
 
 use strum::IntoEnumIterator;
 
@@ -170,7 +185,7 @@ pub fn draw_parameters_screen(app_state: &mut AppState, frame: &mut Frame) {
         )),
         Line::from(format!(
             "Total:     {}",
-            &app_state.vehicle.parameter_messages.len()
+            &app_state.vehicle.parameter_messages.len(),
         )),
         Line::from(""),
         Line::from("Press (r) to refresh"),
@@ -210,10 +225,11 @@ pub fn draw_mission_screen(app_state: &mut AppState, frame: &mut Frame) {
         .margin(1)
         .areas(tab_content);
 
+    let mission_details = app_state.vehicle.mission_details.lock().unwrap();
     let [list_mission_items_area, details_mission_statistics_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(6)]).areas(mission_area);
     let list_mission_items_widget =
-        create_list_mission_items_widget(&app_state.vehicle.mission_messages).block(
+        create_list_mission_items_widget(&mission_details.mission_messages).block(
             Block::bordered()
                 .padding(Padding::horizontal(1))
                 .title(" Mission items ".bold()),
@@ -227,15 +243,17 @@ pub fn draw_mission_screen(app_state: &mut AppState, frame: &mut Frame) {
     List::new(vec![
         Line::from(format!(
             "Loaded at: {}",
-            &app_state
-                .vehicle
+            mission_details
                 .last_mission_request
                 .map(|t| t.format("%H:%M:%S").to_string())
                 .unwrap_or("Not loaded".to_string())
         )),
         Line::from(format!(
-            "Total:     {}",
-            &app_state.vehicle.mission_messages.len()
+            "Total:     {} of {}",
+            mission_details.mission_messages.len(),
+            mission_details
+                .mission_items_to_load_num
+                .map_or("unknown".to_string(), |x| { x.to_string() })
         )),
         Line::from(""),
         Line::from("Press (r) to refresh"),

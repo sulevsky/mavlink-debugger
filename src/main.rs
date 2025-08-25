@@ -1,36 +1,53 @@
 mod cli;
 mod mavlink_client;
 mod utils;
-use chrono::{DateTime, Local};
+use chrono::DateTime;
+use chrono::Local;
 use clap::Parser;
 use mavlink::MavConnection;
 use ratatui::DefaultTerminal;
 use ratatui::widgets::TableState;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::mpsc;
+use std::thread;
 use std::time::SystemTime;
-use std::{sync::Arc, thread};
-use strum::{Display, EnumIter, IntoEnumIterator};
+use strum::Display;
+use strum::EnumIter;
+use strum::IntoEnumIterator;
 use utils::mavlink::decode_param_id;
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
+use crossterm::event::{self};
 mod render;
 
 use crate::cli::Args;
-use crate::mavlink_client::{request_mission, request_parameters};
+use crate::mavlink_client::request_mission_count;
+use crate::mavlink_client::request_parameters;
+use crate::mavlink_client::synchronise_mission_items;
 use color_eyre::Result;
-use mavlink::common::{MISSION_ITEM_INT_DATA, MavModeFlag};
-use mavlink::common::{MavMessage, PARAM_VALUE_DATA};
+use mavlink::common::MISSION_ITEM_INT_DATA;
+use mavlink::common::MavMessage;
+use mavlink::common::MavModeFlag;
+use mavlink::common::PARAM_VALUE_DATA;
 
+#[derive(Default)]
+struct MissionDetails {
+    mission_messages: Vec<MISSION_ITEM_INT_DATA>,
+    last_mission_request: Option<DateTime<Local>>,
+    mission_items_to_load_num: Option<u16>,
+}
+
+#[derive(Default)]
 struct Vehicle {
     messages: Vec<MavMessage>,
     parameter_messages: Vec<PARAM_VALUE_DATA>,
     is_armed: bool,
-    // parameters
     last_parameters_request: Option<DateTime<Local>>,
     connection: Option<Arc<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
-    // mission
-    mission_messages: Vec<MISSION_ITEM_INT_DATA>,
-    last_mission_request: Option<DateTime<Local>>,
+    mission_details: Mutex<MissionDetails>,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -118,8 +135,10 @@ impl AppState {
         self.parameters_table_state.select_first();
     }
     fn clear_mission(&mut self) {
-        self.vehicle.mission_messages.clear();
-        self.vehicle.last_mission_request = None;
+        let mut details = self.vehicle.mission_details.lock().unwrap();
+        details.mission_messages.clear();
+        details.last_mission_request = None;
+        details.mission_items_to_load_num = None;
         self.mission_table_state.select_first();
     }
 }
@@ -150,9 +169,21 @@ fn run(
                         terminal.draw(|frame| render::draw_parameters_screen(app_state, frame))?;
                     }
                     Screen::Mission => {
-                        if app_state.vehicle.last_mission_request.is_none() {
-                            request_mission(&mut app_state.vehicle);
-                            app_state.vehicle.last_mission_request = Some(Local::now());
+                        if app_state
+                            .vehicle
+                            .mission_details
+                            .lock()
+                            .unwrap()
+                            .last_mission_request
+                            .is_none()
+                        {
+                            request_mission_count(&mut app_state.vehicle);
+                            app_state
+                                .vehicle
+                                .mission_details
+                                .lock()
+                                .unwrap()
+                                .last_mission_request = Some(Local::now());
                         }
                         terminal.draw(|frame| render::draw_mission_screen(app_state, frame))?;
                     }
@@ -174,9 +205,19 @@ fn run(
                             .parameter_messages
                             .sort_by_key(|d| decode_param_id(&d.param_id));
                     }
+                    mavlink::common::MavMessage::MISSION_COUNT(data) => {
+                        app_state
+                            .vehicle
+                            .mission_details
+                            .lock()
+                            .unwrap()
+                            .mission_items_to_load_num = Some(data.count);
+                        synchronise_mission_items(&app_state.vehicle);
+                    }
                     mavlink::common::MavMessage::MISSION_ITEM_INT(data) => {
-                        app_state.vehicle.mission_messages.push(data);
-                        app_state.vehicle.mission_messages.sort_by_key(|d| d.seq);
+                        let mut mission_details = app_state.vehicle.mission_details.lock().unwrap();
+                        mission_details.mission_messages.push(data);
+                        mission_details.mission_messages.sort_by_key(|d| d.seq);
                     }
 
                     _ => {}
@@ -274,7 +315,15 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                     Screen::Status => None,
                     Screen::Messages => Some(app_state.vehicle.messages.len()),
                     Screen::Parameters => Some(app_state.vehicle.parameter_messages.len()),
-                    Screen::Mission => Some(app_state.vehicle.mission_messages.len()),
+                    Screen::Mission => Some(
+                        app_state
+                            .vehicle
+                            .mission_details
+                            .lock()
+                            .unwrap()
+                            .mission_messages
+                            .len(),
+                    ),
                 };
                 if let Some(max_len) = max_len_option {
                     if let Some(s) = choose_list_state(app_state) {

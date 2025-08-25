@@ -1,5 +1,6 @@
 pub mod tui {
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
+    use std::time::SystemTime;
 
     pub struct FPSLimiter {
         refresh_rate: Duration,
@@ -34,7 +35,8 @@ pub mod tui {
     }
     #[cfg(test)]
     mod tests {
-        use std::time::{Duration, UNIX_EPOCH};
+        use std::time::Duration;
+        use std::time::UNIX_EPOCH;
 
         use crate::utils::tui::FPSLimiter;
 

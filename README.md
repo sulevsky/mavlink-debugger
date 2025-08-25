@@ -16,12 +16,11 @@ cargo test
 ```
 
 ## Plan
-[TODO] next to 0 is last 
-[TODO] mission load in sequence
 [TODO] add asciicinema
 [TODO] parametrise system_id and component_id 
-[TODO] check mavlink async methods instead of thread 
 [TODO] mission edit
 [TODO] enter button
 [TODO] parameters edit
 [TODO] save settings/plan to local file, load from file 
+[TODO] check why first parameter and mission item is not selected by default 
+[TODO] check mavlink async methods `pub async fn connect_async<M: Message + Sync + Send>` 

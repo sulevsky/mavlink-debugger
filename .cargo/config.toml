@@ -1,2 +1,3 @@
 [alias]
 run-local = "run -- tcpout:127.0.0.1:5760"
+format = "fmt -- --config imports_granularity=Item"
