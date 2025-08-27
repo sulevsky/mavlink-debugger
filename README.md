@@ -1,7 +1,9 @@
 # Mavlink debugger
 `mavlink-debugger` is a simple command-line tool to watch Mavlink events stream
 
-## Requirement
+[![asciicast](https://asciinema.org/a/736064.svg)](https://asciinema.org/a/736064)
+
+## Requirements
 - [Rust](https://www.rust-lang.org/)
 - [Cargo package manager](https://doc.rust-lang.org/cargo/)
 
@@ -25,12 +27,12 @@ mavlink-debugger tcpout:127.0.0.1:5760
 ### Connection address format
 
 The application expects a connection address in the format:
-`(tcpout|tcpin|udpout|udpin|udpbcast|serial|file):(ip|dev|path):(port|baud)`
+`(tcpout|udpin|serial):(ip|path):(port|baud)`
 
 Examples:
-- TCP: `tcpout:127.0.0.1:14550`
+- TCP: `tcpout:0.0.0.0:5760`
 - UDP: `udpin:0.0.0.0:14550`
-- Serial: `serial:/dev/ttyUSB0:57600`
+- Serial: `serial:/dev/tty.usbmodem1101:57600`
 
 ## Development
 ### Build
@@ -43,9 +45,10 @@ cargo test
 ```
 ### Run
 ```sh
-cargo run -- "tcpout:127.0.0.1:14550"
+cargo run -- "tcpout:127.0.0.1:5760"
 ```
 ### Additionally
+
 #### Tests
 ```sh
 cargo test
@@ -58,12 +61,6 @@ cargo format
 ```sh
 cargo clippy
 ```
-
-## TODOs
-- test udp and put in readme
-- test serial and put in readme
-- add asciicinema
-- double check readme (add connection examples, descriptions)
 
 ## Future improvements
 - mission edit

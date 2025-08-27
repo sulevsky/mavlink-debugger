@@ -158,7 +158,7 @@ fn draw_tabs(tab_header: Rect, app_state: &AppState, frame: &mut Frame) {
         .collect::<Vec<String>>();
 
     Tabs::new(tab_names)
-        .highlight_style(Style::default().bg(Color::Yellow))
+        .highlight_style(Style::default().bg(Color::Blue))
         .select(tab_index)
         .block(Block::bordered().border_type(ratatui::widgets::BorderType::Thick))
         .render(tab_header, frame.buffer_mut());
@@ -389,7 +389,7 @@ fn create_list_events_widget(messages: &[MavMessage]) -> Table<'static> {
         Row::new(vec![cell])
     });
 
-    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Yellow))
+    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Blue))
 }
 
 fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> Table<'static> {
@@ -400,7 +400,7 @@ fn create_list_parameters_widget(parameter_messages: &[PARAM_VALUE_DATA]) -> Tab
         ]));
         Row::new(vec![cell])
     });
-    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Yellow))
+    Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(Style::default().bg(Color::Blue))
 }
 
 fn create_list_mission_items_widget(mission_items: &[MISSION_ITEM_INT_DATA]) -> Table<'static> {
@@ -431,5 +431,5 @@ fn create_list_mission_items_widget(mission_items: &[MISSION_ITEM_INT_DATA]) -> 
         ],
     )
     .header(header)
-    .row_highlight_style(Style::default().bg(Color::Yellow))
+    .row_highlight_style(Style::default().bg(Color::Blue))
 }
