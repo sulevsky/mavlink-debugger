@@ -56,21 +56,6 @@ struct Vehicle {
     target_details: Option<TargetDetails>,
     mission_details: Mutex<MissionDetails>,
 }
-fn main() -> Result<()> {
-    let args = Args::parse();
-
-    color_eyre::install()?;
-    let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
-    handle_input(event_tx.clone());
-    let mut terminal = ratatui::init();
-
-    let vehicle = mavlink_client::connect(args.address.as_str(), event_tx.clone());
-    let mut app_state = AppState::default(args, vehicle);
-
-    let app_result = run(&mut app_state, &mut terminal, event_rx);
-    ratatui::restore();
-    app_result
-}
 
 enum AppEvent {
     Input(crossterm::event::Event),
@@ -135,7 +120,6 @@ impl AppState {
             None
         }
     }
-
     fn clear_parameters(&mut self) {
         self.vehicle.parameter_messages.clear();
         self.vehicle.last_parameters_request = None;
@@ -150,12 +134,28 @@ impl AppState {
     }
 }
 
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    color_eyre::install()?;
+    let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+    handle_input(event_tx.clone());
+    let mut terminal = ratatui::init();
+
+    let vehicle = mavlink_client::connect(args.address.as_str(), event_tx.clone());
+    let mut app_state = AppState::default(args, vehicle);
+
+    let app_result = run(&mut app_state, &mut terminal, event_rx);
+    ratatui::restore();
+    app_result
+}
+
 fn run(
     app_state: &mut AppState,
     terminal: &mut DefaultTerminal,
     rx: mpsc::Receiver<AppEvent>,
 ) -> Result<()> {
-    let mut fps_limiter = utils::tui::FPSLimiter::default(50);
+    let mut fps_limiter = utils::tui::FPSLimiter::default(5);
     while !app_state.is_exit {
         let app_event = rx.recv()?;
         match app_event {
@@ -355,13 +355,7 @@ fn handle_input_event(app_state: &mut AppState, event: Event) {
                     }
                 }
             }
-
-            KeyCode::Enter => {
-                todo!();
-            }
-            _ => {
-                println!("{:?}\r", key.code.as_char());
-            }
+            _ => {}
         }
     }
 }

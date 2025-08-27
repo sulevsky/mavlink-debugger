@@ -22,6 +22,7 @@ use ratatui::widgets::Table;
 use ratatui::widgets::Tabs;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use serde_json::Value;
 
 use crate::AppState;
 use crate::Screen;
@@ -366,22 +367,14 @@ fn try_parse_message(message: &MavMessage) -> Vec<(String, String)> {
     let original = format!("{:?}", message);
     if let Some(brackets_start) = original.find("{") {
         if let Some(brackets_end) = original.find("}") {
-            let details = original[brackets_start + 1..brackets_end]
-                .trim()
-                .split(",")
-                .filter(|val| val.contains(":"))
-                .map(|val| val.split(":").map(|el| el.trim()).collect::<Vec<_>>())
-                .map(|val| {
-                    (
-                        val.first().unwrap().to_string(),
-                        val.last().unwrap().to_string(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            return details
-                .iter()
-                .map(|val| (format!("{:<20}", &val.0), val.1.clone()))
-                .collect::<Vec<_>>();
+            let json_str = &original[brackets_start..brackets_end + 1];
+            let maybe_value = json5::from_str::<Value>(json_str);
+            if let Ok(Value::Object(map)) = maybe_value {
+                return map
+                    .iter()
+                    .map(|(k, v)| (format!("{:<20}", k), format!("{:}", v)))
+                    .collect::<Vec<_>>();
+            }
         }
     }
     vec![]

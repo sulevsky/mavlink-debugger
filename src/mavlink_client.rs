@@ -29,7 +29,6 @@ fn subscribe(vehicle: &mut Vehicle, tx: mpsc::Sender<AppEvent>) {
                 Ok(frame) => tx.send(AppEvent::Mavlink(Box::new(frame))).unwrap(),
                 Err(MessageReadError::Io(e)) => {
                     if e.kind() == std::io::ErrorKind::WouldBlock {
-                        // println!("No messages");
                         //no messages currently available to receive -- wait a while
                         thread::sleep(Duration::from_secs(1));
                         continue;

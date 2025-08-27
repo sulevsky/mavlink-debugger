@@ -62,10 +62,10 @@ cargo clippy
 ## TODOs
 - test udp and put in readme
 - test serial and put in readme
-- enter button
-- check why first parameter and mission item is not selected by default 
 - add asciicinema
 - double check readme (add connection examples, descriptions)
+
+## Future improvements
 - mission edit
 - parameters edit
 - save settings/plan to local file, load from file 
