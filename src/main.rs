@@ -4,6 +4,7 @@ mod utils;
 use chrono::DateTime;
 use chrono::Local;
 use clap::Parser;
+use crossterm::event::KeyEvent;
 use mavlink::MavConnection;
 use mavlink::MavFrame;
 use ratatui::DefaultTerminal;
@@ -259,48 +260,32 @@ fn run(
 }
 
 fn handle_input_event(app_state: &mut AppState, event: Event) {
-    if let Event::Key(key) = event {
-        match key.code {
-            KeyCode::Char(char) => match char {
-                'q' => {
-                    app_state.is_exit = true;
-                }
-                'c' => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        app_state.is_exit = true;
-                    }
-                }
-                'j' => {
-                    if let Some(s) = choose_list_state(app_state) {
-                        s.select_next();
-                    }
-                }
-                'k' => {
-                    if let Some(s) = choose_list_state(app_state) {
-                        s.select_previous();
-                    }
-                }
-                'r' => match app_state.screen {
-                    Screen::Parameters => {
-                        app_state.clear_parameters();
-                    }
-                    Screen::Mission => {
-                        app_state.clear_mission();
-                    }
-                    _ => {}
-                },
-                _ => {}
-            },
-
-            KeyCode::Esc => {
+    if let Event::Key(KeyEvent {
+        code, modifiers, ..
+    }) = event
+    {
+        match code {
+            KeyCode::Char('q') | KeyCode::Esc => {
                 app_state.is_exit = true;
             }
-            KeyCode::Up => {
+            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                app_state.is_exit = true;
+            }
+            KeyCode::Char('r') => match app_state.screen {
+                Screen::Parameters => {
+                    app_state.clear_parameters();
+                }
+                Screen::Mission => {
+                    app_state.clear_mission();
+                }
+                _ => {}
+            },
+            KeyCode::Char('k') | KeyCode::Up => {
                 if let Some(s) = choose_list_state(app_state) {
                     s.select_previous();
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(s) = choose_list_state(app_state) {
                     s.select_next();
                 }

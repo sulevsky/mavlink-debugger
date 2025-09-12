@@ -63,6 +63,8 @@ cargo clippy
 ```
 
 ## Future improvements
+- handle could not connect
+- handle unwrap
 - mission edit
 - parameters edit
 - save settings/plan to local file, load from file 
