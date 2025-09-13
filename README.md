@@ -1,5 +1,5 @@
-# Mavlink debugger
-`mavlink-debugger` is a simple command-line tool to watch Mavlink events stream
+# MAVLink debugger
+`mavlink-debugger` is a simple command-line tool to watch MAVLink events stream
 
 [![asciicast](https://asciinema.org/a/736064.svg)](https://asciinema.org/a/736064)
 
