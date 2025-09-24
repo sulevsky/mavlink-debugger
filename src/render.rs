@@ -27,6 +27,7 @@ use serde_json::Value;
 use crate::AppState;
 use crate::Screen;
 use crate::utils::mavlink::decode_param_id;
+use crate::utils::mavlink::parse_status_text;
 
 use strum::IntoEnumIterator;
 
@@ -328,6 +329,11 @@ fn create_event_details_paragraph(message: Option<MavMessage>) -> Paragraph<'sta
                     "mavlink_version: {:?} ",
                     data.mavlink_version
                 )));
+            }
+            MavMessage::STATUSTEXT(data) => {
+                lines.push(Line::from(format!("severity:     {:?} ", data.severity)));
+                let status_text = parse_status_text(&data.text);
+                lines.push(Line::from(format!("text:         {}", status_text)));
             }
             _ => {
                 let l = try_parse_message(&m)

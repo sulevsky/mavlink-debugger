@@ -63,10 +63,17 @@ pub mod mavlink {
             .map(|&b| char::from(b))
             .collect()
     }
+    pub fn parse_status_text(text: &[u8; 50]) -> String {
+        text.iter()
+            .filter(|&b| *b != 0)
+            .map(|&b| char::from(b))
+            .collect()
+    }
 
     #[cfg(test)]
     mod tests {
         use crate::utils::mavlink::decode_param_id;
+        use crate::utils::mavlink::parse_status_text;
 
         #[test]
         fn test_decode_param_id() {
@@ -75,6 +82,14 @@ pub mod mavlink {
                 array[i] = ch as u8;
             }
             assert_eq!(decode_param_id(&array), "TEST_PARAM".to_string());
+        }
+        #[test]
+        fn test_parse_status_text() {
+            let mut array = [0u8; 50];
+            for (i, ch) in "TEST_STATUS_TEXT".chars().enumerate() {
+                array[i] = ch as u8;
+            }
+            assert_eq!(parse_status_text(&array), "TEST_STATUS_TEXT".to_string());
         }
     }
 }
