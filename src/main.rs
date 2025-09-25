@@ -25,15 +25,15 @@ use crossterm::event::KeyModifiers;
 use crossterm::event::{self};
 mod render;
 
-use crate::cli::Args;
-use crate::mavlink_client::request_mission_count;
-use crate::mavlink_client::request_parameters;
-use crate::mavlink_client::synchronise_mission_items;
+use cli::Args;
 use color_eyre::Result;
 use mavlink::common::MISSION_ITEM_INT_DATA;
 use mavlink::common::MavMessage;
 use mavlink::common::MavModeFlag;
 use mavlink::common::PARAM_VALUE_DATA;
+use mavlink_client::request_mission_count;
+use mavlink_client::request_parameters;
+use mavlink_client::synchronise_mission_items;
 
 #[derive(Default)]
 struct MissionDetails {
@@ -82,7 +82,7 @@ enum Screen {
     Mission,
 }
 pub struct AppState {
-    args: crate::cli::Args,
+    args: cli::Args,
 
     vehicle: Vehicle,
 
@@ -94,7 +94,7 @@ pub struct AppState {
     screen: Screen,
 }
 impl AppState {
-    fn default(args: crate::cli::Args, vehicle: Vehicle) -> Self {
+    fn default(args: cli::Args, vehicle: Vehicle) -> Self {
         AppState {
             args,
             vehicle,

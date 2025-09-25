@@ -8,3 +8,10 @@ run:
 
 run-serial:
     ./target/debug/mavlink-debugger serial:/dev/tty.usbmodem123456781:115200
+
+run-log-reader:
+    ./target/debug/log_reader serial:/dev/tty.usbmodem123456781:115200
+
+build-run-log-reader:
+    @just b
+    @just run-log-reader
